@@ -1,4 +1,4 @@
-from github import download_latest_release
+from .github import download_latest_release
 
 import codecs
 import os
@@ -35,6 +35,11 @@ def collate_python_files(user, name):
     if not os.path.isdir(user_dir):
         os.mkdir(user_dir)
 
+    # skip if repository is already downloaded and extracted
+    container_dir = os.path.join('repositories', user, name)
+    if os.path.isdir(container_dir):
+        return
+
     # create pathname for the to-be-downloaded tarball
     output_path = 'repositories/{}/{}.tar.gz'.format(user, name)
     download_latest_release(user, name, output_path)
@@ -51,15 +56,15 @@ def extract_python_src_files(user, repo_name, tarball_path):
     shutil.unpack_archive(tarball_path, unpack_destination)
     os.unlink(tarball_path)
 
-    # the name of the folder that contains the project code
-    # is the repository name plus the version/tag
-    project_path = [os.path.join(unpack_destination, f) for f in os.listdir(unpack_destination)
-                    if os.path.isdir(os.path.join(unpack_destination, f))][0]
-
     # ensure target source files container directory exists
     container_directory = os.path.join(unpack_destination, repo_name)
     if not os.path.isdir(container_directory):
         os.mkdir(container_directory)
+
+    # the name of the folder that contains the project code
+    # is the repository name plus the version/tag
+    project_path = [os.path.join(unpack_destination, f) for f in os.listdir(unpack_destination)
+                    if os.path.isdir(os.path.join(unpack_destination, f))][0]
 
     # move all candidate python source files to the target container directory
     for root, _, files in os.walk(project_path):
