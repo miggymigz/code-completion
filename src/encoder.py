@@ -4,11 +4,31 @@ import codecs
 import json
 import os
 
+SPECIAL_TOKENS = {
+    '|Token.Text|_<|endofline|>': '\n',
+    '|Token.Text|_<|space|>': ' ',
+    '|Token.Text|_<|tab|>': '    ',
+}
+
 
 class Encoder:
     def __init__(self, encoder):
         self.encoder = encoder
         self.decoder = {v: k for k, v in self.encoder.items()}
+
+    def decode(self, tokens):
+        src = ''
+
+        for code in tokens:
+            token = self.decoder[code]
+
+            try:
+                src += SPECIAL_TOKENS[token]
+            except KeyError:
+                token = token.split('_', 1)[1]
+                src += token
+
+        return src
 
     def encode(self, src):
         tokens = []
