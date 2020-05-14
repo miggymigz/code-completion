@@ -56,6 +56,10 @@ def get_encoder():
     vocabulary = collate_vocab_from_dir('repositories', output_data_file=True)
     encoder = {word: i for i, word in enumerate(vocabulary)}
 
+    # ensure models directory exists
+    if not os.path.isdir('models'):
+        os.mkdir('models')
+
     # persist created dictionary
     with codecs.open('models/encoder.json', 'w') as f:
         json.dump(encoder, f)

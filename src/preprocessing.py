@@ -66,7 +66,7 @@ def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
     return unknown_tokens + filtered_tokens
 
 
-def tokenize(src):
+def tokenize(src, trim_leading_newlines=True):
     tokens = []
     single_line_start = None
     multi_line_start = None
@@ -138,11 +138,15 @@ def tokenize(src):
         # other tokens need not to be preprocessed
         tokens.append((t_type, token))
 
+    if trim_leading_newlines:
+        while tokens[0][1] == '<|endofline|>':
+            tokens.pop(0)
+
     return tokens
 
 
 def collate_training_dataset(encoder, dirname='repositories',
-                             batch_size=64, buffer_size=10000, sequence_length=50):
+                             batch_size=64, buffer_size=10000, sequence_length=100):
     assert os.path.isdir(dirname)
 
     src_tokens = []
