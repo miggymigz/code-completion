@@ -72,13 +72,17 @@ def collate_python_files(user, name):
     if not os.path.isdir(user_dir):
         os.mkdir(user_dir)
 
+    # ensure temporary directory exists
+    if not os.path.isdir('tmp'):
+        os.mkdir('tmp')
+
     # skip if repository is already downloaded and extracted
     container_dir = os.path.join('repositories', user, name)
     if os.path.isdir(container_dir):
         return
 
     # create pathname for the to-be-downloaded tarball
-    output_path = 'repositories/{}/{}.tar.gz'.format(user, name)
+    output_path = 'tmp/{}_{}.tar.gz'.format(user, name)
     download_latest_release(user, name, output_path)
     extract_python_src_files(user, name, output_path)
 
@@ -89,12 +93,11 @@ def extract_python_src_files(user, repo_name, tarball_path):
     assert tarball_path.endswith('.tar.gz')
 
     # unpack and delete tarball
-    unpack_destination = os.path.join('repositories', user)
+    unpack_destination = os.path.join('tmp', user + '_' + repo_name)
     shutil.unpack_archive(tarball_path, unpack_destination)
-    os.unlink(tarball_path)
 
     # ensure target source files container directory exists
-    container_directory = os.path.join(unpack_destination, repo_name)
+    container_directory = os.path.join('repositories', user, repo_name)
     if not os.path.isdir(container_directory):
         os.mkdir(container_directory)
 
@@ -104,7 +107,12 @@ def extract_python_src_files(user, repo_name, tarball_path):
                     if os.path.isdir(os.path.join(unpack_destination, f))][0]
 
     # move all candidate python source files to the target container directory
-    for root, _, files in os.walk(project_path):
+    for root, dirs, files in os.walk(project_path):
+        # remove all test directories
+        for d in dirs:
+            if d.startswith('test'):
+                shutil.rmtree(os.path.join(root, d))
+
         for f in files:
             if f.endswith('.py') and not re.match(EXCLUDED_PATTERN, f):
                 file_src_path = os.path.join(root, f)
@@ -119,4 +127,9 @@ if __name__ == '__main__':
     repo_list = get_repo_list()
     for repo_user, repo_name in tqdm(repo_list):
         collate_python_files(repo_user, repo_name)
+
+    # delete temporary directory
+    if os.path.isdir('tmp'):
+        shutil.rmtree('tmp')
+
     print('INFO - Download dataset task - FINISHED')
