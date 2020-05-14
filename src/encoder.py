@@ -33,12 +33,13 @@ class Encoder:
     def encode(self, src):
         tokens = []
 
-        for token in tokenize(src):
+        for t_type, raw_token in tokenize(src):
+            token = '|{}|_{}'.format(t_type, raw_token)
+
             try:
                 tokens.append(self.encoder[token])
             except KeyError:
-                t_type = token.split('_', 1)[0]
-                token = '{}_<|unknown|>'.format(t_type)
+                token = '|{}|_<|unknown|>'.format(t_type)
                 tokens.append(self.encoder[token])
 
         return tokens
@@ -52,7 +53,7 @@ def get_encoder():
             return Encoder(encoder=encoder)
 
     # create a new vocabulary from the dataset
-    vocabulary = collate_vocab_from_dir('repositories')
+    vocabulary = collate_vocab_from_dir('repositories', output_data_file=True)
     encoder = {word: i for i, word in enumerate(vocabulary)}
 
     # persist created dictionary

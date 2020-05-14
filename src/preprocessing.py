@@ -2,6 +2,7 @@ from collections import Counter
 from pygments.lexers import Python3Lexer
 from pygments.token import Token
 
+import tensorflow as tf
 import codecs
 import json
 import os
@@ -14,14 +15,24 @@ EXCLUDED_TOKEN_TYPES = set([
     Token.Literal.String.Doc,
 ])
 UNKNOWN_TOKEN_TYPES = set([
+    Token.Literal.Number.Float,
+    Token.Literal.Number.Hex,
+    Token.Literal.Number.Integer,
+    Token.Literal.Number.Oct,
+    Token.Literal.String.Double,
+    Token.Literal.String.Escape,
+    Token.Literal.String.Interpol,
+    Token.Literal.String.Single,
     Token.Name,
     Token.Name.Class,
-    Token.Name.Function,
     Token.Name.Decorator,
+    Token.Name.Exception,
+    Token.Name.Function,
+    Token.Name.Namespace,
 ])
 
 
-def collate_vocab_from_dir(dirname, output_data_file=False):
+def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
     assert os.path.isdir(dirname)
     counter = Counter()
 
@@ -38,22 +49,27 @@ def collate_vocab_from_dir(dirname, output_data_file=False):
                 counter.update(tokens)
 
     if output_data_file:
-        with codecs.open('vocab_data.txt', 'w', 'utf-8') as f:
-            for token, count in counter.most_common():
-                print('%s: %d' % (token, count), file=f)
+        create_dataset_summary_file(counter, threshold=threshold)
 
     # create different unknown tokens for different program tokens (e.g., class/variable/func names)
     unknown_tokens = ['|{}|_<|unknown|>'.format(
         t_type) for t_type in UNKNOWN_TOKEN_TYPES]
 
     # delete values with count <= 10
-    return unknown_tokens + [k for k, v in counter.items() if v > 10]
+    # but retain tokens of that is not a literal or a constant type
+    filtered_tokens = []
+    for (t_type, token), frequency in counter.items():
+        if frequency > threshold or t_type not in UNKNOWN_TOKEN_TYPES:
+            token = '|{}|_{}'.format(t_type, token)
+            filtered_tokens.append(token)
+
+    return unknown_tokens + filtered_tokens
 
 
 def tokenize(src):
     tokens = []
-    single_line_string_flag = False
-    multi_line_string_flag = False
+    single_line_start = None
+    multi_line_start = None
     acc = ''
 
     for t_type, token in LEXER.get_tokens(src):
@@ -63,30 +79,39 @@ def tokenize(src):
 
         # react to start/end of multiline strings
         if token == "'''" or token == '"""':
-            multi_line_string_flag = not multi_line_string_flag
-            if not multi_line_string_flag:
-                tokens.append('|Token.Literal.String.Single|_' + acc)
+            if multi_line_start is None:
+                multi_line_start = token
+            # end token matches start token
+            elif multi_line_start == token:
+                tokens.append((t_type, acc))
                 acc = ''
+                multi_line_start = None
+            else:
+                acc += token
             continue
 
         # don't treat strings inside multiline strings as tokens
         # as they may be documentation
-        if multi_line_string_flag:
+        if multi_line_start is not None:
             acc += token
             continue
 
         # compress strings into one token
         # control start/end of string delimiters
-        if t_type == Token.Literal.String.Single and token == "'":
-            single_line_string_flag = not single_line_string_flag
-            if not single_line_string_flag:
-                tokens.append('|Token.Literal.String.Single|_' + acc)
+        if token == "'" or token == '"':
+            if single_line_start is None:
+                single_line_start = token
+            elif single_line_start == token:
+                tokens.append((t_type, acc))
                 acc = ''
+                single_line_start = None
+            else:
+                acc += token
             continue
 
         # compress strings into one token
         # accumulate strings in between
-        if t_type == Token.Literal.String.Single and single_line_string_flag:
+        if single_line_start is not None:
             acc += token
             continue
 
@@ -95,35 +120,31 @@ def tokenize(src):
         # there to make spacing look good
         if token.isspace():
             if token == '\n':
-                tokens.append('|Token.Text|_<|endofline|>')
+                tokens.append((t_type, '<|endofline|>'))
                 continue
             if token == ' ':
-                tokens.append('|Token.Text|_<|space|>')
+                tokens.append((t_type, '<|space|>'))
                 continue
-
             if len(token) % 4 == 0:
-                tokens.extend(['|Token.Text|_<|tab|>'] * (len(token) // 4))
+                single_tab = (t_type, '<|tab|>')
+                tokens.extend([single_tab] * (len(token) // 4))
                 continue
             # treat spaces not divisible by 4 as spaces
             # since they are just there to align with the function call on top
             else:
-                tokens.append('|Token.Text|_<|space|>')
+                tokens.append((t_type, '<|space|>'))
                 continue
 
-        token = '|{}|_{}'.format(t_type, token)
-        tokens.append(token)
+        # other tokens need not to be preprocessed
+        tokens.append((t_type, token))
 
     return tokens
 
 
-def create_word2dev_dataset(dirname, wsize=2):
+def collate_training_dataset(encoder, dirname='repositories', batch_size=64, buffer_size=1e+4):
     assert os.path.isdir(dirname)
-    data = []
 
-    # attempt to load encoder from the saved json file
-    if os.path.isfile('models/encoder.json'):
-        with codecs.open('models/encoder.json', 'r') as f:
-            vocabulary = json.load(f).keys()
+    src_tokens = []
 
     for root, _, files in os.walk(dirname):
         for pf in files:
@@ -133,9 +154,45 @@ def create_word2dev_dataset(dirname, wsize=2):
 
             # open each src file and collate all unique tokens
             with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
-                for line in fd:
-                    tokens = [token for token in tokenize(
-                        line) if token in vocabulary]
-                    data.append(tokens)
+                src = fd.read()
+                tokens = encoder.encode(src)
+                src_tokens.append(tokens)
 
-    return data
+    def split_input_target(src):
+        src_input = src[:-1]
+        src_output = src[1:]
+        return src_input, src_output
+
+    # create tensorflow dataset
+    dataset = tf.data.Dataset.from_tensor_slices(src_tokens)
+    dataset = dataset.map(split_input_target)
+    dataset = dataset.shuffle(buffer_size).batch_size(
+        batch_size, drop_remainder=False
+    )
+
+    return dataset
+
+
+def create_dataset_summary_file(counter, threshold):
+    with codecs.open('vocab_data.txt', 'w', 'utf-8') as f:
+        rare_types = {}
+
+        # print each token's frequency
+        for (t_type, raw_token), count in counter.most_common():
+            token = '|{}|_{}'.format(t_type, raw_token)
+            print('%s: %d' % (token, count), file=f)
+
+            # collect raw tokens of rare types
+            if count <= threshold:
+                if t_type in rare_types:
+                    rare_types[t_type].append(repr(raw_token))
+                else:
+                    rare_types[t_type] = [repr(raw_token)]
+
+        print('\n', file=f)
+
+        # print out token types that didn't pass threshold
+        # also print out the corresponding raw tokens of each type
+        print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
+        for k, v in rare_types.items():
+            print('{} ==> {}'.format(k, v), file=f)
