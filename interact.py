@@ -27,8 +27,6 @@ def interact(src=None, file=None):
         hparams = json.load(f)
         n_vocab = hparams['n_vocab']
         n_embd = hparams['n_embd']
-        n_head = hparams['n_head']
-        n_layer = hparams['n_layer']
 
     # retrieve encoder
     encoder = get_encoder()
@@ -42,7 +40,7 @@ def interact(src=None, file=None):
     model.load_weights(tf.train.latest_checkpoint(checkpoint_dir))
     model.build(tf.TensorShape([1, None]))
     model.reset_states()
-    print(model.summary())
+    model.summary()
 
     # encode input source code
     input_eval = [token for token in encoder.encode(src)]

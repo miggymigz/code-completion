@@ -18,8 +18,6 @@ def train_model(n_batch=64):
         hparams = json.load(f)
         n_vocab = hparams['n_vocab']
         n_embd = hparams['n_embd']
-        n_head = hparams['n_head']
-        n_layer = hparams['n_layer']
 
     # retrieve encoder and training dataset
     encoder = get_encoder()
@@ -27,8 +25,12 @@ def train_model(n_batch=64):
 
     # create model based on hyperparameters
     model = build_model(n_vocab=n_vocab, n_embd=n_embd, n_batch=n_batch)
-    model.compile(optimizer='adam', loss=loss)
-    print(model.summary())
+    model.compile(
+        optimizer='adam',
+        loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy'],
+    )
+    model.summary()
 
     # configure checkpoint
     checkpoint_dir = 'training_checkpoints'
@@ -36,14 +38,13 @@ def train_model(n_batch=64):
     checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
         filepath=checkpoint_prefix,
         save_weights_only=True,
+        save_best_only=True,
+        monitor='loss',
+        verbose=1,
     )
 
     # start training
-    model.fit(dataset, epochs=1000, callbacks=[checkpoint_callback])
-
-
-def loss(labels, logits):
-    return tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
+    model.fit(dataset, epochs=100, callbacks=[checkpoint_callback])
 
 
 if __name__ == '__main__':
