@@ -1,61 +1,61 @@
-from encoder import get_encoder
-from preprocessing import collate_training_dataset
+from hyperparameters import LRCustomSchedule
+from layers.embedding import positional_encoding
+from layers.decoder import DecoderLayer
 
 import tensorflow as tf
-import os
 
 
-# class CCGPT2(tf.keras.Model):
-#     def __init__(self, n_vocab, n_embd, n_batch=64, n_layers=1, n_heads=12, learning_rate=1e-3):
-#         super(CCGPT2, self).__init__()
+class CC(tf.keras.Model):
+    def __init__(self, *, n_vocab, n_ctx, n_embd, n_head, n_layer, dff=2048, rate=0.1):
+        super(CC, self).__init__()
 
-#         self.n_vocab = n_vocab
-#         self.n_embd = n_embd
-#         self.n_batch = n_batch
-#         self.n_layers = n_layers
-#         self.n_heads = n_heads
-#         self.learning_rate = learning_rate
+        self.n_vocab = n_vocab
+        self.n_ctx = n_ctx
+        self.n_embd = n_embd
+        self.n_head = n_head
+        self.n_layer = n_layer
 
-#         self.embedding = tf.keras.layers.Embedding(
-#             n_vocab,
-#             n_embd,
-#             batch_input_shape=(n_batch, None)
-#         )
-#         self.gru = tf.keras.layers.GRU(
-#             1024,
-#             return_sequences=True,
-#             stateful=True,
-#             recurrent_initializer='glorot_uniform'
-#         )
-#         self.output = tf.keras.layers.Dense(n_vocab)
+        self.embedding = tf.keras.layers.Embedding(n_vocab, n_embd)
+        self.pos_encoding = positional_encoding(n_ctx, n_embd)
+        self.dropout = tf.keras.layers.Dropout(rate)
+        self.decoder_layers = [DecoderLayer(
+            d_model=n_embd, n_head=n_head, dff=dff, rate=rate
+        ) for _ in range(n_layer)]
 
-#     def call(self, x):
-#         x = self.embedding(x)
-#         x = self.gru(x)
-#         return self.output(x)
+    def call(self, x, training, look_ahead_mask):
+        # retrieve sequence length
+        seq_len = tf.shape(x)[1]
 
-#     def train_step(self, x, y, optimizer, loss_obj):
-#         with tf.GradientTape() as tape:
-#             y_hat = self(x, training=True)
-#             loss = loss_obj(y, y_hat)
+        # add token embedding and positional encoding
+        x = self.embedding(x)
+        x *= tf.math.sqrt(tf.cast(self.n_embd, tf.float32))
+        x += self.pos_encoding[:, :seq_len, :]
 
-#         gradients = tape.gradient(loss, self.trainable_variables)
-#         optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        # add dropout
+        x = self.dropout(x, training=training)
 
-#     def get_optimizer(self):
-#         return tf.keras.optimizers.Adam(self.learning_rate)
+        # go through all of the layers
+        for i in range(self.n_layer):
+            x = self.decoder_layers[i](x, training, look_ahead_mask)
 
-#     def get_loss(self):
-#         return tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        return x
 
+    def get_optimizer(self):
+        learning_rate = LRCustomSchedule(self.n_embd)
+        optimizer = tf.keras.optimizers.Adam(learning_rate)
 
-def build_model(*, n_vocab, n_embd, n_batch):
-    model = tf.keras.Sequential([
-        tf.keras.layers.Embedding(
-            n_vocab, n_embd, batch_input_shape=(n_batch, None)),
-        tf.keras.layers.GRU(1024, return_sequences=True,
-                            stateful=True, recurrent_initializer='glorot_uniform'),
-        tf.keras.layers.Dense(n_vocab),
-    ])
+        return optimizer
 
-    return model
+    def get_loss(self):
+        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=True,
+            reduction='none',
+        )
+
+        def loss_function(real, pred):
+            mask = tf.math.logical_not(tf.math.equal(real, 0))
+            loss_ = loss_object(real, pred)
+            mask = tf.cast(mask, dtype=loss_.dtype)
+            loss_ *= mask
+
+        return loss_function
