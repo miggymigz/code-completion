@@ -9,19 +9,24 @@ import os
 
 
 def train_model(n_batch=64):
+    # if run on an implementation of tensorflow-gpu
     # training fails without the stuff below, idk why
     physical_devices = tf.config.list_physical_devices('GPU')
-    tf.config.experimental.set_memory_growth(physical_devices[0], enable=True)
+    if physical_devices:
+        tf.config.experimental.set_memory_growth(
+            physical_devices[0],
+            enable=True,
+        )
+
+    # retrieve encoder and training dataset
+    encoder = get_encoder()
+    dataset = collate_training_dataset(encoder)
 
     # retrieve model hyperparameters
     with open(os.path.join('models', 'hparams.json')) as f:
         hparams = json.load(f)
         n_vocab = hparams['n_vocab']
         n_embd = hparams['n_embd']
-
-    # retrieve encoder and training dataset
-    encoder = get_encoder()
-    dataset = collate_training_dataset(encoder)
 
     # create model based on hyperparameters
     model = build_model(n_vocab=n_vocab, n_embd=n_embd, n_batch=n_batch)
