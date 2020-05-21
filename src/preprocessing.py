@@ -5,6 +5,7 @@ from pygments.token import Token
 import tensorflow as tf
 import codecs
 import json
+import numpy as np
 import os
 
 
@@ -147,39 +148,25 @@ def tokenize(src, trim_leading_newlines=True):
     return tokens
 
 
-def collate_training_dataset(encoder, dirname='repositories',
-                             batch_size=64, buffer_size=10000, sequence_length=100):
-    assert os.path.isdir(dirname)
+def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=10000, sequence_length=100):
+    # ensure compressed dataset file exists
+    if not os.path.isfile(name):
+        print('ERROR - "dataset.npz" not found.')
+        print('ERROR - Encode the repositories first using encode.py')
+        exit(1)
 
-    src_tokens = []
+    # load encoded tokens from the compressed dataset file
+    with np.load(name) as npz:
+        # ensure "token_chunks" array exists in the file
+        if "token_chunks" not in npz.files:
+            print('ERROR - "dataset.npz" does not contain the token chunks.')
+            print('ERROR - Be sure to encode the repositories by using encode.py')
+            exit(1)
 
-    for root, _, files in os.walk(dirname):
-        for pf in files:
-            # skip files that are not python src codes
-            if not pf.endswith('.py'):
-                continue
+        # retrieve token chunks from the compressed dataset file
+        token_chunks = npz['token_chunks']
 
-            # open each src file and collate all unique tokens
-            with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
-                src = fd.read()
-                tokens = encoder.encode(src)
-                if len(tokens) >= sequence_length:
-                    src_tokens.extend(tokens[:50])
-
-    def split_input_target(src):
-        src_input = src[:-1]
-        src_output = src[1:]
-        return src_input, src_output
-
-    # create tensorflow dataset
-    dataset = tf.data.Dataset.from_tensor_slices(src_tokens)
-    dataset = dataset.batch(sequence_length + 1, drop_remainder=True)
-    dataset = dataset.map(split_input_target)
-    dataset = dataset.shuffle(buffer_size).batch(
-        batch_size, drop_remainder=True
-    )
-
-    return dataset
+    return token_chunks
 
 
 def create_dataset_summary_file(counter, threshold):

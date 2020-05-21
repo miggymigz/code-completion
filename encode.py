@@ -26,11 +26,11 @@ def main():
             # open each src file and collate all unique tokens
             with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
                 src = fd.read()
-                tokens = encoder.encode(src)
+                tokens = encoder.encode(src, add_start_token=True)
                 token_chunks.append(np.stack(tokens))
 
     # save encoded tokens in a compressed format using numpy
-    np.savez_compressed('dataset.npz', token_chunks)
+    np.savez_compressed('dataset.npz', token_chunks=token_chunks)
 
 
 if __name__ == '__main__':
