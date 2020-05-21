@@ -70,4 +70,10 @@ def get_encoder():
     with codecs.open('models/encoder.json', 'w') as f:
         json.dump(encoder, f)
 
+    # change hyperparameter n_vocab whenever encoder.json changes
+    with codecs.open('models/hparams.json', 'r+', 'utf-8') as f:
+        hparams = json.load(f)
+        hparams['n_vocab'] = len(vocabulary)
+        json.dump(hparams, f)
+
     return Encoder(encoder=encoder)
