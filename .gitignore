@@ -4,3 +4,4 @@ __pycache__
 repositories
 models
 training_checkpoints
+dataset.npz
