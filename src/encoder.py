@@ -1,10 +1,11 @@
-from preprocessing import collate_vocab_from_dir, tokenize
+from preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN
 
 import codecs
 import json
 import os
 
 SPECIAL_TOKENS = {
+    START_TOKEN: '',
     '|Token.Text|_<|endofline|>': '\n',
     '|Token.Text|_<|space|>': ' ',
     '|Token.Text|_<|tab|>': '    ',
@@ -30,8 +31,13 @@ class Encoder:
 
         return src
 
-    def encode(self, src):
+    def encode(self, src, add_start_token=False):
         tokens = []
+
+        # add_start_token is a flag for convenience to automatically add the start token
+        # at the start of each src tokens
+        if add_start_token:
+            tokens.append(self.encoder[START_TOKEN])
 
         for t_type, raw_token in tokenize(src):
             token = '|{}|_{}'.format(t_type, raw_token)

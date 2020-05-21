@@ -30,6 +30,7 @@ UNKNOWN_TOKEN_TYPES = set([
     Token.Name.Function,
     Token.Name.Namespace,
 ])
+START_TOKEN = '<|start|>'
 
 
 def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
@@ -63,7 +64,8 @@ def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
             token = '|{}|_{}'.format(t_type, token)
             filtered_tokens.append(token)
 
-    return unknown_tokens + filtered_tokens
+    # add start token
+    return [START_TOKEN] + unknown_tokens + filtered_tokens
 
 
 def tokenize(src, trim_leading_newlines=True):
