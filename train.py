@@ -17,11 +17,36 @@ if physical_devices:
         enable=True,
     )
 
+
+def encode(x, y):
+    return x, y
+
+
+def tf_encode(x, y):
+    result_x, result_y = tf.py_function(encode, [x, y], [tf.int64, tf.int64])
+    result_x.set_shape([None])
+    result_y.set_shape([None])
+
+    return result_x, result_y
+
+
+def filter_max_length(x, y, max_length=1024):
+    return tf.logical_and(
+        tf.size(x) <= max_length,
+        tf.size(y) <= max_length
+    )
+
+
 # retrieve training dataset
 dataset = tf.data.Dataset.from_generator(
     collate_training_dataset,
     output_types=(tf.int64, tf.int64),
-)
+).map(tf_encode) \
+    .filter(filter_max_length) \
+    .cache() \
+    .shuffle(20000) \
+    .padded_batch(64) \
+    .prefetch(tf.data.experimental.AUTOTUNE)
 
 
 # retrieve model hyperparameters
@@ -76,8 +101,8 @@ if ckpt_manager.latest_checkpoint:
 # more generic shapes.
 
 train_step_signature = [
-    tf.TensorSpec(shape=(None,), dtype=tf.int64),
-    tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
 ]
 
 
