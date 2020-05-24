@@ -8,6 +8,12 @@ import json
 import os
 import time
 
+
+EPOCHS = 1000
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
+
+
 # if run on an implementation of tensorflow-gpu
 # training fails without the stuff below, idk why
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -30,22 +36,14 @@ def tf_encode(x, y):
     return result_x, result_y
 
 
-def filter_max_length(x, y, max_length=1024):
-    return tf.logical_and(
-        tf.size(x) <= max_length,
-        tf.size(y) <= max_length
-    )
-
-
 # retrieve training dataset
 dataset = tf.data.Dataset.from_generator(
     collate_training_dataset,
     output_types=(tf.int64, tf.int64),
 ).map(tf_encode) \
-    .filter(filter_max_length) \
     .cache() \
-    .shuffle(20000) \
-    .padded_batch(64) \
+    .shuffle(BUFFER_SIZE) \
+    .padded_batch(BATCH_SIZE) \
     .prefetch(tf.data.experimental.AUTOTUNE)
 
 
@@ -121,7 +119,7 @@ def train_step(inp, tar):
     train_accuracy(tar, predictions)
 
 
-for epoch in range(1):
+for epoch in range(EPOCHS):
     start = time.time()
 
     train_loss.reset_states()
@@ -134,7 +132,7 @@ for epoch in range(1):
             print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
                 epoch + 1, batch, train_loss.result(), train_accuracy.result()))
 
-    if (epoch + 1) % 5 == 0:
+    if (epoch + 1) % 10 == 0:
         ckpt_save_path = ckpt_manager.save()
         print('Saving checkpoint for epoch {} at {}'.format(
             epoch + 1, ckpt_save_path))
