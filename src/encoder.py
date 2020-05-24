@@ -1,4 +1,4 @@
-from preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN
+from preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN, get_hparams, save_hparams
 
 import codecs
 import json
@@ -66,14 +66,14 @@ def get_encoder():
     if not os.path.isdir('models'):
         os.mkdir('models')
 
-    # persist created dictionary
-    with codecs.open('models/encoder.json', 'w') as f:
-        json.dump(encoder, f)
-
     # change hyperparameter n_vocab whenever encoder.json changes
-    with codecs.open('models/hparams.json', 'r+', 'utf-8') as f:
-        hparams = json.load(f)
-        hparams['n_vocab'] = len(vocabulary)
-        json.dump(hparams, f)
+    # read all other hyperparameters
+    hparams = get_hparams(name='models/hparams.json')
+    hparams['n_vocab'] = len(vocabulary)
+    save_hparams(name='models/hparams.json', **hparams)
+
+    # persist created dictionary
+    with codecs.open('models/encoder.json', 'w', 'utf-8') as f:
+        json.dump(encoder, f)
 
     return Encoder(encoder=encoder)

@@ -32,6 +32,13 @@ UNKNOWN_TOKEN_TYPES = set([
     Token.Name.Namespace,
 ])
 START_TOKEN = '<|start|>'
+DEFAULT_HPARAMS = {
+    'n_vocab': 0,
+    'n_embd': 768,
+    'n_ctx': 1024,
+    'n_head': 12,
+    'n_layer': 12,
+}
 
 
 def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
@@ -156,7 +163,7 @@ def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=1000
         exit(1)
 
     # load encoded tokens from the compressed dataset file
-    with np.load(name) as npz:
+    with np.load(name, allow_pickle=True) as npz:
         # ensure "token_chunks" array exists in the file
         if "token_chunks" not in npz.files:
             print('ERROR - "dataset.npz" does not contain the token chunks.')
@@ -164,9 +171,9 @@ def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=1000
             exit(1)
 
         # retrieve token chunks from the compressed dataset file
-        token_chunks = npz['token_chunks']
-
-    return token_chunks
+        for src_tokens in npz['token_chunks']:
+            assert len(src_tokens) > 1
+            yield (src_tokens[:-1], src_tokens[1:])
 
 
 def create_dataset_summary_file(counter, threshold):
@@ -192,3 +199,33 @@ def create_dataset_summary_file(counter, threshold):
         print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
         for k, v in rare_types.items():
             print('{} ==> {}'.format(k, v), file=f)
+
+
+def get_hparams(name='models/hparams.json'):
+    # return default hparams if hparams.json does not exist
+    if not os.path.isfile(name):
+        return DEFAULT_HPARAMS
+
+    # read hparams.json and return its contents
+    with codecs.open(name, 'r', 'utf-8') as fd:
+        try:
+            return json.load(fd)
+        except json.JSONDecodeError:
+            return DEFAULT_HPARAMS
+
+
+def save_hparams(name='models/hparams.json', **kwargs):
+    # load hparams from file if it exists
+    if os.path.isfile(name):
+        with codecs.open(name, 'r', 'utf-8') as fd:
+            hparams = json.load(fd)
+    # otherwise create new hparams from default hparams
+    else:
+        hparams = DEFAULT_HPARAMS
+
+    # update hparams from keyword arguments
+    hparams.update(kwargs)
+
+    # persist updated hparams to file
+    with codecs.open(name, 'w', 'utf-8') as fd:
+        json.dump(hparams, fd, indent=4)

@@ -18,9 +18,10 @@ class CC(tf.keras.Model):
         self.embedding = tf.keras.layers.Embedding(n_vocab, n_embd)
         self.pos_encoding = positional_encoding(n_ctx, n_embd)
         self.dropout = tf.keras.layers.Dropout(rate)
-        self.decoder_layers = [DecoderLayer(
+        self.dec_layers = [DecoderLayer(
             d_model=n_embd, n_head=n_head, dff=dff, rate=rate
         ) for _ in range(n_layer)]
+        self.projection = tf.keras.layers.Dense(n_vocab, dtype=tf.float32)
 
     def call(self, x, training, look_ahead_mask):
         # retrieve sequence length
@@ -36,26 +37,9 @@ class CC(tf.keras.Model):
 
         # go through all of the layers
         for i in range(self.n_layer):
-            x = self.decoder_layers[i](x, training, look_ahead_mask)
+            x = self.dec_layers[i](x, training, look_ahead_mask)
+
+        # (batch_size, tar_seq_len, target_vocab_size)
+        x = self.projection(x)
 
         return x
-
-    def get_optimizer(self):
-        learning_rate = LRCustomSchedule(self.n_embd)
-        optimizer = tf.keras.optimizers.Adam(learning_rate)
-
-        return optimizer
-
-    def get_loss(self):
-        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=True,
-            reduction='none',
-        )
-
-        def loss_function(real, pred):
-            mask = tf.math.logical_not(tf.math.equal(real, 0))
-            loss_ = loss_object(real, pred)
-            mask = tf.cast(mask, dtype=loss_.dtype)
-            loss_ *= mask
-
-        return loss_function

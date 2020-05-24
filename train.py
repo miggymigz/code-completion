@@ -1,12 +1,12 @@
-from encoder import get_encoder
 from hyperparameters import LRCustomSchedule
 from layers.attention import create_masks
 from model import CC
-from preprocessing import collate_training_dataset
+from preprocessing import collate_training_dataset, get_hparams
 
 import tensorflow as tf
 import json
 import os
+import time
 
 # if run on an implementation of tensorflow-gpu
 # training fails without the stuff below, idk why
@@ -17,16 +17,19 @@ if physical_devices:
         enable=True,
     )
 
-# retrieve encoder and training dataset
-encoder = get_encoder()
-dataset = collate_training_dataset(encoder)
+# retrieve training dataset
+dataset = tf.data.Dataset.from_generator(
+    collate_training_dataset,
+    output_types=(tf.int64, tf.int64),
+)
+
 
 # retrieve model hyperparameters
-with open(os.path.join('models', 'hparams.json')) as f:
-    hparams = json.load(f)
+hparams = get_hparams()
+print(hparams)
 
 # create model based on hyperparameters
-model = CC(*hparams)
+model = CC(**hparams)
 learning_rate = LRCustomSchedule(hparams['n_embd'])
 optimizer = tf.keras.optimizers.Adam(
     learning_rate,
@@ -47,7 +50,7 @@ def loss_function(real, pred):
     mask = tf.cast(mask, dtype=loss_.dtype)
     loss_ *= mask
 
-    return tf.reduce_sum(loss_)/tf.reduce_sum(mask)
+    return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
 
 
 train_loss = tf.keras.metrics.Mean(name='train_loss')
@@ -73,25 +76,45 @@ if ckpt_manager.latest_checkpoint:
 # more generic shapes.
 
 train_step_signature = [
-    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+    tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    tf.TensorSpec(shape=(None,), dtype=tf.int64),
 ]
 
 
 @tf.function(input_signature=train_step_signature)
 def train_step(inp, tar):
-    tar_inp = tar[:, :-1]
-    tar_real = tar[:, 1:]
-
-    _, combined_mask, _ = create_masks(
-        inp, tar_inp)
+    combined_mask = create_masks(tar)
 
     with tf.GradientTape() as tape:
-        predictions, _ = model(inp, tar_inp, True, combined_mask)
-        loss = loss_function(tar_real, predictions)
+        predictions = model(inp, True, combined_mask)
+        loss = loss_function(tar, predictions)
 
     gradients = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
     train_loss(loss)
-    train_accuracy(tar_real, predictions)
+    train_accuracy(tar, predictions)
+
+
+for epoch in range(1):
+    start = time.time()
+
+    train_loss.reset_states()
+    train_accuracy.reset_states()
+
+    for (batch, (inp, tar)) in enumerate(dataset):
+        train_step(inp, tar)
+
+        if batch % 50 == 0:
+            print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
+                epoch + 1, batch, train_loss.result(), train_accuracy.result()))
+
+    if (epoch + 1) % 5 == 0:
+        ckpt_save_path = ckpt_manager.save()
+        print('Saving checkpoint for epoch {} at {}'.format(
+            epoch + 1, ckpt_save_path))
+
+    print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(
+        epoch + 1, train_loss.result(), train_accuracy.result()))
+
+    print('Time taken for 1 epoch: {} secs\n'.format(time.time() - start))

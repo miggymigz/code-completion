@@ -10,8 +10,8 @@ DATASET_DIR = 'repositories'
 def main():
     # assert directory "repositories" exists
     if not os.path.isdir(DATASET_DIR):
-        print('ERROR - Directory "repositories" not found. \
-        Download the dataset first by running download_dataset.py')
+        print('ERROR - Directory "repositories" not found.')
+        print('Download the dataset first by running download_dataset.py')
         exit(1)
 
     encoder = get_encoder()
