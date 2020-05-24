@@ -58,6 +58,9 @@ def get_encoder():
             encoder = json.load(f)
             return Encoder(encoder=encoder)
 
+    print('INFO - encoder.json does not exist.')
+    print('INFO - Will generate encoder.json from the downloaded repositories')
+
     # create a new vocabulary from the dataset
     vocabulary = collate_vocab_from_dir('repositories', output_data_file=True)
     encoder = {word: i for i, word in enumerate(vocabulary)}

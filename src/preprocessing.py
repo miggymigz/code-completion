@@ -162,6 +162,10 @@ def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=1000
         print('ERROR - Encode the repositories first using encode.py')
         exit(1)
 
+    # get the maximum token length from hparams
+    hparams = get_hparams()
+    max_seq_len = hparams['n_ctx']
+
     # load encoded tokens from the compressed dataset file
     with np.load(name, allow_pickle=True) as npz:
         # ensure "token_chunks" array exists in the file
@@ -172,8 +176,21 @@ def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=1000
 
         # retrieve token chunks from the compressed dataset file
         for src_tokens in npz['token_chunks']:
-            assert len(src_tokens) > 1
-            yield (src_tokens[:-1], src_tokens[1:])
+            length = len(src_tokens)
+            assert length > 1,\
+                "ERROR - src tokens' length should be atleast greater than 1"
+
+            # divide longer tokens into chunks if it exceeds max_seq_len
+            if length > max_seq_len:
+                chunks_length = int(np.ceil(length / max_seq_len))
+
+                for j in range(chunks_length):
+                    start_index = j * max_seq_len
+                    end_index = (j+1) * max_seq_len
+                    token_chunk = src_tokens[start_index: end_index]
+                    yield token_chunk[:-1], token_chunk[1:]
+            else:
+                yield src_tokens[:-1], src_tokens[1:]
 
 
 def create_dataset_summary_file(counter, threshold):
