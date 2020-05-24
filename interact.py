@@ -1,5 +1,7 @@
 from encoder import get_encoder
-from model import build_model
+from layers.attention import create_masks
+from model import CC
+from preprocessing import get_hparams
 
 import tensorflow as tf
 import codecs
@@ -20,30 +22,40 @@ def interact(src=None, file=None):
     else:
         assert file is None
 
+    print('=' * 80)
     print('INPUT: ', src)
+    print('=' * 80)
 
-    # retrieve model hyperparameters
-    with open(os.path.join('models', 'hparams.json')) as f:
-        hparams = json.load(f)
-        n_vocab = hparams['n_vocab']
-        n_embd = hparams['n_embd']
+    # if run on an implementation of tensorflow-gpu
+    # training fails without the stuff below, idk why
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        tf.config.experimental.set_memory_growth(
+            physical_devices[0],
+            enable=True,
+        )
 
-    # retrieve encoder
+    # retrieve hyperparameters and encoder
+    hparams = get_hparams()
     encoder = get_encoder()
 
-    # because of the way the RNN state is passed from timestep to timestep,
-    # the model only accepts a fixed batch size once built
-    model = build_model(n_vocab=n_vocab, n_embd=n_embd, n_batch=1)
+    # create model and configure training checkpoint manager
+    model = CC(**hparams)
+    ckpt_path = './checkpoints/train'
+    ckpt = tf.train.Checkpoint(model=model)
+    ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_path, 1)
 
-    # load pre-trained weights
-    checkpoint_dir = 'training_checkpoints'
-    model.load_weights(tf.train.latest_checkpoint(checkpoint_dir))
-    model.build(tf.TensorShape([1, None]))
-    model.reset_states()
-    model.summary()
+    # check for latest checkpoint existence
+    if not ckpt_manager.latest_checkpoint:
+        print('ERROR - No checkpoints found.')
+        print('ERROR - Train the model first before executing this script.')
+        exit(1)
+
+    # load model weights using the latest checkpoint
+    ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
 
     # encode input source code
-    input_eval = [token for token in encoder.encode(src)]
+    input_eval = encoder.encode(src, add_start_token=True)
     input_eval = tf.expand_dims(input_eval, 0)
 
     # flag to determine when to stop predicting process
@@ -51,11 +63,11 @@ def interact(src=None, file=None):
 
     # let model to output token until we get <|endofline|>
     while not should_stop:
-        predictions = model(input_eval)
-        predictions = tf.squeeze(predictions, 0)
-        predicted_id = tf.random.categorical(
-            predictions, num_samples=1)[-1, 0].numpy()
-        predicted_token = encoder.decode([predicted_id])
+        mask = create_masks(input_eval)
+        predictions = model(input_eval, False, mask)
+        predictions = predictions[:, -1, :]
+        predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
+        predicted_token = encoder.decode([predicted_id.numpy().item()])
 
         # concatenate predicted to source
         src += predicted_token
@@ -67,7 +79,7 @@ def interact(src=None, file=None):
 
         # We pass the predicted character as the next input to the model
         # along with the previous hidden state
-        input_eval = tf.expand_dims([predicted_id], 0)
+        input_eval = tf.concat([input_eval, predicted_id], axis=-1)
 
     print('======================== OUTPUT ========================')
     print(src)

@@ -12,6 +12,7 @@ import time
 EPOCHS = 1000
 BUFFER_SIZE = 10000
 BATCH_SIZE = 64
+MAX_TO_KEEP = 5
 
 
 # if run on an implementation of tensorflow-gpu
@@ -84,7 +85,10 @@ train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
 # configure checkpoint
 ckpt_path = './checkpoints/train'
 ckpt = tf.train.Checkpoint(model=model, optimizer=optimizer)
-ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_path, max_to_keep=5)
+ckpt_manager = tf.train.CheckpointManager(
+    ckpt, ckpt_path,
+    max_to_keep=MAX_TO_KEEP
+)
 
 # restore latest checkpoint if it exists
 if ckpt_manager.latest_checkpoint:

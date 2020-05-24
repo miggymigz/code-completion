@@ -31,7 +31,7 @@ class Encoder:
 
         return src
 
-    def encode(self, src, add_start_token=False):
+    def encode(self, src, add_start_token=True):
         tokens = []
 
         # add_start_token is a flag for convenience to automatically add the start token
