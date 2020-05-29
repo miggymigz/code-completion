@@ -8,12 +8,13 @@ import shutil
 
 
 API_BASE_URL = 'https://api.github.com'
-LATEST_RELEASE_API = '/repos/{}/{}/releases/latest'
+REPO_INFO_API = '/repos/{}/{}'
+REPO_ZIP_URL = 'https://github.com/{}/{}/archive/{}.zip'
 EXCLUDED_PATTERN = re.compile(r'(?:__init__\.py)|(?:test_.+\.py)')
 
 
 def get_latest_release_tarball_url(user, name):
-    latest_release_api = LATEST_RELEASE_API.format(user, name)
+    latest_release_api = REPO_INFO_API.format(user, name)
     api_url = API_BASE_URL + latest_release_api
     r = requests.get(api_url, headers=get_header_for_auth())
 
@@ -21,8 +22,11 @@ def get_latest_release_tarball_url(user, name):
     if r.status_code != 200:
         raise AssertionError(r.text)
 
+    # get repo's default branch
+    default_branch = r.json()['default_branch']
+
     # return download link for the source zip
-    return r.json()['tarball_url']
+    return REPO_ZIP_URL.format(user, name, default_branch)
 
 
 def download_latest_release(user, name, path):
@@ -46,20 +50,27 @@ def get_header_for_auth():
     return {'Authorization': auth_value}
 
 
-def get_repo_list():
-    repo_list_filename = 'repository_list.txt'
-    with codecs.open(repo_list_filename, 'r', 'utf-8') as f:
+def get_repo_list(name='repository_list.txt'):
+    repos = []
+
+    with codecs.open(name, 'r', 'utf-8') as f:
         for line in f:
             cleaned = line.strip()
+
+            # skip lines with that starts with #
+            if line.startswith('#'):
+                continue
 
             if cleaned:
                 try:
                     user, name = cleaned.split('/')
-                    yield user, name
+                    repos.append((user, name))
                 except ValueError:
                     print(
                         'INFO - "%s" was skipped because of invalid format.' % cleaned)
                     continue
+
+    return repos
 
 
 def collate_python_files(user, name):
@@ -82,15 +93,15 @@ def collate_python_files(user, name):
         return
 
     # create pathname for the to-be-downloaded tarball
-    output_path = 'tmp/{}_{}.tar.gz'.format(user, name)
+    output_path = 'tmp/{}_{}.zip'.format(user, name)
     download_latest_release(user, name, output_path)
     extract_python_src_files(user, name, output_path)
 
 
 def extract_python_src_files(user, repo_name, tarball_path):
-    # ensure path exists and ends with ".tar.gz"
+    # ensure path exists and ends with ".zip"
     assert os.path.isfile(tarball_path)
-    assert tarball_path.endswith('.tar.gz')
+    assert tarball_path.endswith('.zip')
 
     # unpack and delete tarball
     unpack_destination = os.path.join('tmp', user + '_' + repo_name)
