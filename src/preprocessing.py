@@ -149,13 +149,16 @@ def tokenize(src, trim_leading_newlines=True):
         tokens.append((t_type, token))
 
     if trim_leading_newlines:
-        while tokens[0][1] == '<|endofline|>':
-            tokens.pop(0)
+        try:
+            while tokens[0][1] == '<|endofline|>':
+                tokens.pop(0)
+        except IndexError:
+            pass
 
     return tokens
 
 
-def collate_training_dataset(name='dataset.npz', batch_size=64, buffer_size=10000, sequence_length=100):
+def collate_training_dataset(name='dataset.npz'):
     # ensure compressed dataset file exists
     if not os.path.isfile(name):
         print('ERROR - "dataset.npz" not found.')
