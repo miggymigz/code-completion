@@ -1,3 +1,17 @@
+donnemartin/system-design-primer
+TheAlgorithms/Python
+ytdl-org/youtube-dl
+tensorflow/models
+nvbn/thefuck
+pallets/flask
+django/django
+keras-team/keras
+jakubroztocil/httpie
+psf/requests
+scikit-learn/scikit-learn
+scrapy/scrapy
+home-assistant/core
+soimort/you-get
 ansible/ansible
 plotly/dash
 Azure/azure-sdk-for-python

@@ -25,16 +25,11 @@ if physical_devices:
     )
 
 
-def encode(x, y):
-    return x, y
-
-
 def tf_encode(x, y):
-    result_x, result_y = tf.py_function(encode, [x, y], [tf.int64, tf.int64])
-    result_x.set_shape([None])
-    result_y.set_shape([None])
+    x.set_shape([None])
+    y.set_shape([None])
 
-    return result_x, result_y
+    return x, y
 
 
 # retrieve training dataset
