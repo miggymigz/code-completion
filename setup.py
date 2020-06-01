@@ -12,6 +12,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/miggymigz/code-completion',
+    license='MIT',
     packages=setuptools.find_packages(),
     classifiers=[
         'Programming Language :: Python :: 3',
@@ -19,4 +20,9 @@ setuptools.setup(
         'Operating System :: OS Independent',
     ],
     python_requires='>=3.6',
+    install_requires=[
+        'pygments',
+        'requests',
+        'tqdm',
+    ]
 )
