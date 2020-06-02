@@ -1,4 +1,5 @@
-from preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN, get_hparams, save_hparams
+from .hparams import get_hparams, save_hparams
+from .preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN
 
 import codecs
 import json

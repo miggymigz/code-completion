@@ -7,12 +7,11 @@ pallets/flask
 django/django
 keras-team/keras
 jakubroztocil/httpie
-ansible/ansible
 psf/requests
 scikit-learn/scikit-learn
 scrapy/scrapy
 home-assistant/core
 soimort/you-get
-miggymigz/code-completion
 ansible/ansible
 plotly/dash
+Azure/azure-sdk-for-python

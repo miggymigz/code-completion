@@ -6,3 +6,14 @@ models
 training_checkpoints
 checkpoints
 dataset.npz
+
+# python wheel stuff
+dependency_links.txt
+PKG-INFO
+SOURCES.txt
+top_level.txt
+build
+dist
+*.egg-info
+*.whl
+*.tar.gz

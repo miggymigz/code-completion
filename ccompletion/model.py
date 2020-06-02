@@ -1,6 +1,6 @@
-from hyperparameters import LRCustomSchedule
-from layers.embedding import positional_encoding
-from layers.decoder import DecoderLayer
+from .hparams import LRCustomSchedule
+from .layers.decoder import DecoderLayer
+from .layers.embedding import positional_encoding
 
 import tensorflow as tf
 
