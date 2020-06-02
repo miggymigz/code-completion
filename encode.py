@@ -1,4 +1,6 @@
-from encoder import get_encoder
+from tqdm import tqdm
+
+from ccompletion.encoder import get_encoder
 
 import codecs
 import numpy as np
@@ -18,7 +20,7 @@ def main():
     token_chunks = []
 
     for root, _, files in os.walk(DATASET_DIR):
-        for pf in files:
+        for pf in tqdm(files):
             # skip files that are not python src codes
             if not pf.endswith('.py'):
                 continue
