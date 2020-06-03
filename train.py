@@ -20,10 +20,11 @@ MAX_TO_KEEP = 5
 # training fails without the stuff below, idk why
 physical_devices = tf.config.list_physical_devices('GPU')
 if physical_devices:
-    tf.config.experimental.set_memory_growth(
-        physical_devices[0],
-        enable=True,
-    )
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(
+            device,
+            enable=True,
+        )
 
 
 def tf_encode(x, y):
