@@ -9,6 +9,14 @@ import os
 DATASET_DIR = 'repositories'
 
 
+def get_total_file_count():
+    total = 0
+    for _, _, files in os.walk('repositories'):
+        total += len(files)
+
+    return total
+
+
 def main():
     # assert directory "repositories" exists
     if not os.path.isdir(DATASET_DIR):
@@ -18,18 +26,23 @@ def main():
 
     encoder = get_encoder()
     token_chunks = []
+    n_files = get_total_file_count()
 
-    for root, _, files in os.walk(DATASET_DIR):
-        for pf in tqdm(files):
-            # skip files that are not python src codes
-            if not pf.endswith('.py'):
-                continue
+    with tqdm(total=n_files) as t:
+        for root, _, files in os.walk(DATASET_DIR):
+            for pf in tqdm(files):
+                # skip files that are not python src codes
+                if not pf.endswith('.py'):
+                    continue
 
-            # open each src file and collate all unique tokens
-            with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
-                src = fd.read()
-                tokens = encoder.encode(src, add_start_token=True)
-                token_chunks.append(np.stack(tokens))
+                # open each src file and collate all unique tokens
+                with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
+                    src = fd.read()
+                    tokens = encoder.encode(src, add_start_token=True)
+                    token_chunks.append(np.stack(tokens))
+
+                # update tqdm progress
+                t.update()
 
     # save encoded tokens in a compressed format using numpy
     np.savez_compressed('dataset.npz', token_chunks=token_chunks)

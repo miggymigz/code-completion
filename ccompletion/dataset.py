@@ -2,7 +2,7 @@ from collections import Counter
 from tqdm import tqdm
 
 from .hparams import get_hparams
-from .preprocessing import tokenize
+from .preprocessing import tokenize, START_TOKEN, UNKNOWN_TOKEN_TYPES
 
 import codecs
 import numpy as np
