@@ -1,7 +1,8 @@
+from ccompletion.dataset import collate_training_dataset
 from ccompletion.hparams import LRCustomSchedule
 from ccompletion.layers.attention import create_masks
 from ccompletion.model import CC
-from ccompletion.preprocessing import collate_training_dataset, get_hparams
+from ccompletion.preprocessing import get_hparams
 
 import tensorflow as tf
 import json

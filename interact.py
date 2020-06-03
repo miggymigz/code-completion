@@ -1,7 +1,7 @@
 from ccompletion.encoder import get_encoder
 from ccompletion.layers.attention import create_masks
 from ccompletion.model import CC
-from ccompletion.preprocessing import get_hparams
+from ccompletion.hparams import get_hparams
 
 import tensorflow as tf
 import codecs

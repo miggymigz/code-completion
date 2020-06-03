@@ -2,6 +2,7 @@ __pycache__
 .vscode
 .DS_Store
 repositories
+tmp
 models
 training_checkpoints
 checkpoints

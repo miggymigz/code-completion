@@ -1,5 +1,6 @@
+from .dataset import collate_vocab_from_dir, START_TOKEN
 from .hparams import get_hparams, save_hparams
-from .preprocessing import collate_vocab_from_dir, tokenize, START_TOKEN
+from .preprocessing import tokenize
 
 import codecs
 import json
