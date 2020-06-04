@@ -11,7 +11,7 @@ import time
 
 EPOCHS = 1000
 BUFFER_SIZE = 10000
-BATCH_SIZE = 64
+BATCH_SIZE = 8
 MAX_TO_KEEP = 5
 
 
@@ -128,7 +128,7 @@ for epoch in range(EPOCHS):
     for (batch, (inp, tar)) in enumerate(dataset):
         train_step(inp, tar)
 
-        if batch % 50 == 0:
+        if batch % 100 == 0:
             print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
                 epoch + 1, batch, train_loss.result(), train_accuracy.result()))
 
