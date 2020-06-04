@@ -177,19 +177,30 @@ def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
     assert os.path.isdir(dirname)
     counter = Counter()
 
-    for root, _, files in os.walk(dirname):
-        for pf in files:
-            # skip files that are not python src codes
-            if not pf.endswith('.py'):
-                continue
+    # count total files for tqdm progress
+    total = 0
+    for _, _, files in os.walk(dirname):
+        total += len(files)
 
-            # open each src file and collate all unique tokens
-            with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
-                src_code = fd.read()
-                tokens = tokenize(src_code)
-                counter.update(tokens)
+    print('INFO - Tokenizing source files...')
+    with tqdm(total=total) as t:
+        for root, _, files in os.walk(dirname):
+            for pf in files:
+                # skip files that are not python src codes
+                if not pf.endswith('.py'):
+                    t.update()
+                    continue
+
+                # open each src file and collate all unique tokens
+                pf_path = os.path.join(root, pf)
+                with codecs.open(pf_path, 'r', 'utf8', errors='replace') as fd:
+                    src_code = fd.read()
+                    tokens = tokenize(src_code)
+                    counter.update(tokens)
+                    t.update()
 
     if output_data_file:
+        print('INFO - Writing vocab statistics...')
         create_dataset_summary_file(counter, threshold=threshold)
 
     # create different unknown tokens for different program tokens (e.g., class/variable/func names)
