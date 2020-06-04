@@ -10,6 +10,7 @@ import os
 import re
 import requests
 import shutil
+import tensorflow as tf
 
 
 API_BASE_URL = 'https://api.github.com'
@@ -268,3 +269,20 @@ def create_dataset_summary_file(counter, threshold):
         print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
         for k, v in rare_types.items():
             print('{} ==> {}'.format(k, v), file=f)
+
+
+def get_tf_dataset(*, batch_size, buffer_size):
+    def tf_encode(x, y):
+        x.set_shape([None])
+        y.set_shape([None])
+
+        return x, y
+
+    return tf.data.Dataset.from_generator(
+        collate_training_dataset,
+        output_types=(tf.int64, tf.int64),
+    ).map(tf_encode) \
+        .cache() \
+        .shuffle(buffer_size) \
+        .padded_batch(batch_size) \
+        .prefetch(tf.data.experimental.AUTOTUNE)
