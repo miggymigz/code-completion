@@ -26,34 +26,13 @@ def interact(src=None, file=None):
     print('INPUT: ', src)
     print('=' * 80)
 
-    # if run on an implementation of tensorflow-gpu
-    # training fails without the stuff below, idk why
-    physical_devices = tf.config.list_physical_devices('GPU')
-    if physical_devices:
-        for device in physical_devices:
-            tf.config.experimental.set_memory_growth(
-                device,
-                enable=True,
-            )
-
     # retrieve hyperparameters and encoder
     hparams = get_hparams()
     encoder = get_encoder()
 
     # create model and configure training checkpoint manager
     model = CC(**hparams)
-    ckpt_path = './checkpoints/train'
-    ckpt = tf.train.Checkpoint(model=model)
-    ckpt_manager = tf.train.CheckpointManager(ckpt, ckpt_path, 1)
-
-    # check for latest checkpoint existence
-    if not ckpt_manager.latest_checkpoint:
-        print('ERROR - No checkpoints found.')
-        print('ERROR - Train the model first before executing this script.')
-        exit(1)
-
-    # load model weights using the latest checkpoint
-    ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
+    model.load_checkpoint('./checkpoints/train')
 
     # encode input source code
     input_eval = encoder.encode(src, add_start_token=True)
@@ -88,4 +67,14 @@ def interact(src=None, file=None):
 
 
 if __name__ == '__main__':
+    # if run on an implementation of tensorflow-gpu
+    # training fails without the stuff below, idk why
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(
+                device,
+                enable=True,
+            )
+
     fire.Fire(interact)

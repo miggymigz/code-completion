@@ -101,6 +101,19 @@ class CC(tf.keras.Model):
             else:
                 print('INFO - Will initialize model from scratch.')
 
+    def load_checkpoint(self, checkpoint_path):
+        ckpt = tf.train.Checkpoint(model=self)
+        ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, 1)
+
+        if ckpt_manager.latest_checkpoint:
+            status = ckpt.restore(ckpt_manager.latest_checkpoint)
+            status.expect_partial()
+            print('INFO - Successfully loaded model weights.')
+        else:
+            print('ERROR - No checkpoints found.')
+            print('ERROR - Train the model first before executing this script.')
+            exit(1)
+
     @tf.function(input_signature=train_step_signature)
     def train_step(self, inputs, targets, grad_clip=True, clip_value=2.5):
         mask = create_masks(targets)
