@@ -30,6 +30,9 @@ if __name__ == '__main__':
     # training fails without the stuff below, idk why
     physical_devices = tf.config.list_physical_devices('GPU')
     if physical_devices:
+        gpu_count = len(physical_devices)
+        print('INFO - {} GPUs detected. Will use GPU to train model.'.format(gpu_count))
+
         for device in physical_devices:
             tf.config.experimental.set_memory_growth(
                 device,
