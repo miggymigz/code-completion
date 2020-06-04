@@ -7,8 +7,8 @@ import tensorflow as tf
 import time
 
 train_step_signature = [
-    tf.TensorSpec(shape=(None, None), dtype=tf.int64, name='Inputs'),
-    tf.TensorSpec(shape=(None, None), dtype=tf.int64, name='Targets'),
+    tf.TensorSpec(shape=(None, None), dtype=tf.int32, name='Inputs'),
+    tf.TensorSpec(shape=(None, None), dtype=tf.int32, name='Targets'),
 ]
 
 
@@ -99,7 +99,7 @@ class CC(tf.keras.Model):
                 ckpt.restore(self.ckpt_manager.latest_checkpoint)
                 print('INFO - Latest checkpoint restored.')
             else:
-                print('INFO - Will initialize model from scratch.')
+                print('INFO - Will train model from scratch.')
 
     def load_checkpoint(self, checkpoint_path):
         ckpt = tf.train.Checkpoint(model=self)
@@ -151,8 +151,6 @@ class CC(tf.keras.Model):
                     accuracy = self.train_accuracy.result()
                     print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
                         epoch + 1, batch, loss, accuracy))
-
-                break
 
             if (epoch + 1) % 10 == 0:
                 ckpt_save_path = self.ckpt_manager.save()

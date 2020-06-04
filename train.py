@@ -35,5 +35,8 @@ if __name__ == '__main__':
                 device,
                 enable=True,
             )
+    else:
+        print('WARNING - No GPU was detected.')
+        print('WARNING - Training will take a very long time.')
 
     fire.Fire(train)
