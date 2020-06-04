@@ -18,7 +18,7 @@ REPO_ZIP_URL = 'https://github.com/{}/{}/archive/{}.zip'
 EXCLUDED_PATTERN = re.compile(r'(?:__init__\.py)|(?:test_.+\.py)')
 
 
-def get_latest_release_tarball_url(user, name):
+def get_latest_release_tarball_url(user, name, access_token=None):
     """
     Retrieves the download url of the repository as a compressed zip file.
     The downloaded zip file will contain the latest code of the 
@@ -33,7 +33,8 @@ def get_latest_release_tarball_url(user, name):
     """
     latest_release_api = REPO_INFO_API.format(user, name)
     api_url = API_BASE_URL + latest_release_api
-    r = requests.get(api_url, headers=get_header_for_auth())
+    headers = get_header_for_auth(access_token=access_token)
+    r = requests.get(api_url, headers=headers)
 
     # Ensure API requests return OK
     if r.status_code != 200:
@@ -46,7 +47,7 @@ def get_latest_release_tarball_url(user, name):
     return REPO_ZIP_URL.format(user, name, default_branch)
 
 
-def download_latest_release(user, name, path):
+def download_latest_release(user, name, path, access_token=None):
     """
     Downloads the github repository at github.com/{user}/{name}
     as a zip. The downloaded zip will contain the latest source code
@@ -57,7 +58,7 @@ def download_latest_release(user, name, path):
     name (string): the name of the target repository 
     path (string): the path in which the downloaded zip file will be written to
     """
-    url = get_latest_release_tarball_url(user, name)
+    url = get_latest_release_tarball_url(user, name, access_token=access_token)
     r = requests.get(url, stream=True)
 
     with open(path, 'wb') as fd:
@@ -65,15 +66,15 @@ def download_latest_release(user, name, path):
             fd.write(chunk)
 
 
-def get_header_for_auth():
-    # retrieve access token from environment vars
-    if 'GITHUB_ACCESS_TOKEN' not in os.environ:
-        raise EnvironmentError(
-            'Error: "GITHUB_ACCESS_TOKEN" variable not found!')
+def get_header_for_auth(access_token=None):
+    if access_token is None:
+        try:
+            access_token = os.environ['GITHUB_ACCESS_TOKEN']
+        except KeyError:
+            err_msg = 'ERROR - "GITHUB_ACCESS_TOKEN" variable not found!'
+            raise EnvironmentError(err_msg)
 
-    access_token = os.environ['GITHUB_ACCESS_TOKEN']
     auth_value = 'token {}'.format(access_token)
-
     return {'Authorization': auth_value}
 
 
@@ -100,7 +101,7 @@ def get_repo_list(name='repository_list.txt'):
     return repos
 
 
-def collate_python_files(user, name):
+def collate_python_files(user, name, access_token=None):
     # ensure "repositories" directory exists
     if not os.path.isdir('repositories'):
         os.mkdir('repositories')
@@ -121,7 +122,7 @@ def collate_python_files(user, name):
 
     # create pathname for the to-be-downloaded tarball
     output_path = 'tmp/{}_{}.zip'.format(user, name)
-    download_latest_release(user, name, output_path)
+    download_latest_release(user, name, output_path, access_token=access_token)
     extract_python_src_files(user, name, output_path)
 
 
@@ -161,10 +162,10 @@ def extract_python_src_files(user, repo_name, tarball_path):
     shutil.rmtree(project_path)
 
 
-def download_repositories(name='repository_list.txt'):
+def download_repositories(name='repository_list.txt', access_token=None):
     repo_list = get_repo_list(name=name)
     for repo_user, repo_name in tqdm(repo_list):
-        collate_python_files(repo_user, repo_name)
+        collate_python_files(repo_user, repo_name, access_token=access_token)
 
     # delete temporary directory
     if os.path.isdir('tmp'):
