@@ -66,7 +66,7 @@ def interact(src=None, file=None):
     while not should_stop:
         mask = create_masks(input_eval)
         predictions = model(input_eval, False, mask)
-        predictions = predictions[:, -1, :]
+        predictions = predictions[:, -1:, :]
         predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
         predicted_token = encoder.decode([predicted_id.numpy().item()])
 
