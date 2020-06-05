@@ -122,7 +122,8 @@ def collate_python_files(user, name, access_token=None):
         return
 
     # create pathname for the to-be-downloaded tarball
-    output_path = 'tmp/{}_{}.zip'.format(user, name)
+    zip_filename = '{}_{}.zip'.format(user, name)
+    output_path = os.path.join('tmp', zip_filename)
     download_latest_release(user, name, output_path, access_token=access_token)
     extract_python_src_files(user, name, output_path)
 
