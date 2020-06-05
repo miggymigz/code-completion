@@ -10,7 +10,8 @@ import time
 import fire
 
 
-def train(epochs=1000, buffer_size=10000, batch_size=8, max_to_keep=5):
+def train(epochs=1000, buffer_size=10000, batch_size=8, max_to_keep=5,
+          checkpoint_dir='checkpoints/train', start_from_zero=False):
     dataset = get_tf_dataset(buffer_size=buffer_size, batch_size=batch_size)
     hparams = get_hparams()
     print(hparams)
@@ -18,9 +19,9 @@ def train(epochs=1000, buffer_size=10000, batch_size=8, max_to_keep=5):
     model = CC(**hparams)
     model.create_optimizer()
     model.create_checkpoint_manager(
-        checkpoint_path='checkpoints/train',
+        checkpoint_path=checkpoint_dir,
         max_to_keep=max_to_keep,
-        load_model=True,
+        load_model=not start_from_zero,
     )
     model.fit(dataset, epochs=epochs)
 
