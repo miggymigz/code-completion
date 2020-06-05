@@ -163,16 +163,6 @@ def extract_python_src_files(user, repo_name, tarball_path):
     shutil.rmtree(project_path)
 
 
-def download_repositories(name='repository_list.txt', access_token=None):
-    repo_list = get_repo_list(name=name)
-    for repo_user, repo_name in tqdm(repo_list):
-        collate_python_files(repo_user, repo_name, access_token=access_token)
-
-    # delete temporary directory
-    if os.path.isdir('tmp'):
-        shutil.rmtree('tmp')
-
-
 def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
     assert os.path.isdir(dirname)
     counter = Counter()
