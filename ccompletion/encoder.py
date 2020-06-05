@@ -28,8 +28,12 @@ class Encoder:
             try:
                 src += SPECIAL_TOKENS[token]
             except KeyError:
-                token = token.split('_', 1)[1]
-                src += token
+                t_type, token = token.split('_', 1)
+
+                if 'String' in t_type:
+                    src += "'{}'".format(token)
+                else:
+                    src += token
 
         return src
 

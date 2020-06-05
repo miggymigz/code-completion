@@ -22,9 +22,9 @@ def interact(src=None, file=None):
     else:
         assert file is None
 
-    print('=' * 80)
-    print('INPUT: ', src)
-    print('=' * 80)
+    print('=' * 36 + ' INPUT ' + '=' * 37)
+    print(src)
+    print('=' * 36 + ' INPUT ' + '=' * 37)
 
     # retrieve hyperparameters and encoder
     hparams = get_hparams()
@@ -61,9 +61,9 @@ def interact(src=None, file=None):
         # along with the previous hidden state
         input_eval = tf.concat([input_eval, predicted_id], axis=-1)
 
-    print('======================== OUTPUT ========================')
+    print('=' * 36 + ' OUTPUT ' + '=' * 36)
     print(src)
-    print('======================== OUTPUT ========================')
+    print('=' * 36 + ' OUTPUT ' + '=' * 36)
 
 
 if __name__ == '__main__':
