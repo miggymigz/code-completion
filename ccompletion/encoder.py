@@ -57,7 +57,7 @@ class Encoder:
         return tokens
 
 
-def get_encoder():
+def get_encoder(threshold=20):
     # attempt to load encoder from the saved json file
     if os.path.isfile('models/encoder.json'):
         with codecs.open('models/encoder.json', 'r') as f:
@@ -68,7 +68,11 @@ def get_encoder():
     print('INFO - Will generate encoder.json from the downloaded repositories')
 
     # create a new vocabulary from the dataset
-    vocabulary = collate_vocab_from_dir('repositories', output_data_file=True)
+    vocabulary = collate_vocab_from_dir(
+        'repositories', 
+        threshold=threshold, 
+        output_data_file=True
+    )
     encoder = {word: i for i, word in enumerate(vocabulary)}
 
     # ensure models directory exists

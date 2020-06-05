@@ -17,7 +17,7 @@ def get_total_file_count(dataset_dir):
 
 
 def encode(dataset_dir='repositories', token_count_threshold=10,
-           redo=False, output_file='dataset.npz'):
+           output_file='dataset.npz', frequency_threshold=20, redo=False):
     # assert directory "repositories" exists
     if not os.path.isdir(dataset_dir):
         print('ERROR - Directory "repositories" not found.')
@@ -30,7 +30,7 @@ def encode(dataset_dir='repositories', token_count_threshold=10,
         exit(0)
 
     total_file_count = get_total_file_count(dataset_dir)
-    encoder = get_encoder()
+    encoder = get_encoder(threshold=frequency_threshold)
     token_chunks = []
     ignored_files = []
 

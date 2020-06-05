@@ -164,7 +164,7 @@ def extract_python_src_files(user, repo_name, tarball_path):
     shutil.rmtree(project_path)
 
 
-def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
+def collate_vocab_from_dir(dirname, threshold=20, output_data_file=False):
     assert os.path.isdir(dirname)
     counter = Counter()
 
