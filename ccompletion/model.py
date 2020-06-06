@@ -139,10 +139,9 @@ class CC(tf.keras.Model):
                     print('Epoch {} Batch {} Loss {:.4f} Accuracy {:.4f}'.format(
                         epoch + 1, batch, loss, accuracy))
 
-            if (epoch + 1) % 10 == 0:
-                ckpt_save_path = self.ckpt_manager.save()
-                print('Saving checkpoint for epoch {} at {}'.format(
-                    epoch + 1, ckpt_save_path))
+            ckpt_save_path = self.ckpt_manager.save()
+            print('Saving checkpoint for epoch {} at {}'.format(
+                epoch + 1, ckpt_save_path))
 
             print('Epoch {} Loss {:.4f} Accuracy {:.4f}'.format(
                 epoch + 1, self.train_loss.result(), self.train_accuracy.result()))
