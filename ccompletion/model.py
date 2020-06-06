@@ -65,41 +65,36 @@ class CC(tf.keras.Model):
 
     def create_optimizer(self):
         learning_rate = LRCustomSchedule(self.n_embd)
-        with tf.name_scope('optimizer'):
-            self.optimizer = tf.keras.optimizers.Adam(
-                learning_rate,
-                beta_1=0.9,
-                beta_2=0.98,
-                epsilon=1e-9
-            )
+        self.optimizer = tf.keras.optimizers.Adam(
+            learning_rate,
+            beta_1=0.9,
+            beta_2=0.98,
+            epsilon=1e-9,
+            clipvalue=2.5,
+        )
 
     def get_loss(self, real, pred):
-        with tf.name_scope('loss_layer'):
-            mask = tf.math.logical_not(tf.math.equal(real, 0))
-            loss_ = self.loss_object(real, pred)
+        mask = tf.math.logical_not(tf.math.equal(real, 0))
+        loss_ = self.loss_object(real, pred)
 
-            with tf.name_scope('loss_masking'):
-                mask = tf.cast(mask, dtype=loss_.dtype)
-                loss_ *= mask
+        mask = tf.cast(mask, dtype=loss_.dtype)
+        loss_ *= mask
 
-            loss_ = tf.reduce_sum(loss_, axis=1)
-            sequence_avg_loss = loss_ / tf.reduce_sum(mask, axis=1)
-            return sequence_avg_loss
+        return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
 
     def create_checkpoint_manager(self, checkpoint_path, max_to_keep=5, load_model=True):
-        with tf.name_scope('checkpoint_manager'):
-            ckpt = tf.train.Checkpoint(model=self, optimizer=self.optimizer)
-            self.ckpt_manager = tf.train.CheckpointManager(
-                ckpt,
-                checkpoint_path,
-                max_to_keep=max_to_keep,
-            )
+        ckpt = tf.train.Checkpoint(model=self, optimizer=self.optimizer)
+        self.ckpt_manager = tf.train.CheckpointManager(
+            ckpt,
+            checkpoint_path,
+            max_to_keep=max_to_keep,
+        )
 
-            if load_model and self.ckpt_manager.latest_checkpoint:
-                ckpt.restore(self.ckpt_manager.latest_checkpoint)
-                print('INFO - Latest checkpoint restored.')
-            else:
-                print('INFO - Will train model from scratch.')
+        if load_model and self.ckpt_manager.latest_checkpoint:
+            ckpt.restore(self.ckpt_manager.latest_checkpoint)
+            print('INFO - Latest checkpoint restored.')
+        else:
+            print('INFO - Will train model from scratch.')
 
     def load_checkpoint(self, checkpoint_path):
         ckpt = tf.train.Checkpoint(model=self)
@@ -115,23 +110,15 @@ class CC(tf.keras.Model):
             exit(1)
 
     @tf.function(input_signature=train_step_signature)
-    def train_step(self, inputs, targets, grad_clip=True, clip_value=2.5):
+    def train_step(self, inputs, targets):
         mask = create_masks(targets)
 
         with tf.GradientTape() as tape:
-            predictions = self(inputs, training=True, look_ahead_mask=mask)
-            loss = tf.reduce_mean(self.get_loss(targets, predictions))
+            predictions = self(inputs, True, mask)
+            loss = self.get_loss(targets, predictions)
 
-        with tf.name_scope('gradients'):
-            gradients = tape.gradient(loss, self.trainable_variables)
-
-            if grad_clip:
-                gradients = [tf.clip_by_value(grad, -clip_value, clip_value)
-                             for grad in gradients]
-
-            self.optimizer.apply_gradients(
-                zip(gradients, self.trainable_variables)
-            )
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.train_loss(loss)
         self.train_accuracy(targets, predictions)
