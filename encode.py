@@ -3,57 +3,68 @@ from tqdm import tqdm
 from ccompletion.encoder import get_encoder
 
 import codecs
+import fire
 import numpy as np
 import os
 
-DATASET_DIR = 'repositories'
 
-
-def get_total_file_count():
+def get_total_file_count(dataset_dir):
     total = 0
-    for _, _, files in os.walk(DATASET_DIR):
+    for _, _, files in os.walk(dataset_dir):
         total += len(files)
 
     return total
 
 
-def main():
+def encode(dataset_dir='repositories', token_count_threshold=10,
+           output_file='dataset.npz', frequency_threshold=20, redo=False):
     # assert directory "repositories" exists
-    if not os.path.isdir(DATASET_DIR):
+    if not os.path.isdir(dataset_dir):
         print('ERROR - Directory "repositories" not found.')
         print('Download the dataset first by running download_dataset.py')
         exit(1)
 
-    encoder = get_encoder()
-    token_chunks = []
-    n_files = get_total_file_count()
+    if os.path.isfile(output_file) and not redo:
+        print('INFO - {} already exists.'.format(output_file))
+        print('INFO - Pass --redo=True to redo encoding.')
+        exit(0)
 
-    with tqdm(total=n_files) as t:
-        for root, _, files in os.walk(DATASET_DIR):
-            for pf in tqdm(files):
+    total_file_count = get_total_file_count(dataset_dir)
+    encoder = get_encoder(threshold=frequency_threshold)
+    token_chunks = []
+    ignored_files = []
+
+    print('INFO - Encoding source files...')
+    with tqdm(total=total_file_count) as pbar:
+        for root, _, files in os.walk(dataset_dir):
+            for pf in files:
                 # skip files that are not python src codes
                 if not pf.endswith('.py'):
+                    pbar.update()
                     continue
 
                 # open each src file and collate all unique tokens
                 pf_path = os.path.join(root, pf)
-                with codecs.open(pf_path, 'r', 'utf-8') as fd:
+                with codecs.open(pf_path, 'r', 'utf8', errors='replace') as fd:
                     src = fd.read()
                     tokens = encoder.encode(src, add_start_token=True)
 
-                    # ignore files that only have 1 or less token(s)
-                    if len(tokens) <= 1:
-                        print('INFO - Will ignore {}'.format(pf_path))
+                    # ignore files that have tokens of length < threshold
+                    if len(tokens) < token_count_threshold:
+                        ignored_files.append(pf_path)
+                        pbar.update()
                         continue
 
                     token_chunks.append(np.stack(tokens))
+                    pbar.update()
 
-                # update tqdm progress
-                t.update()
+    print('INFO - Ignored files:')
+    for f in ignored_files:
+        print('     -', f)
 
     # save encoded tokens in a compressed format using numpy
-    np.savez_compressed('dataset.npz', token_chunks=token_chunks)
+    np.savez_compressed(output_file, token_chunks=token_chunks)
 
 
 if __name__ == '__main__':
-    main()
+    fire.Fire(encode)

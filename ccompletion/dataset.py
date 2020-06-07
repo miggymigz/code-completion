@@ -10,6 +10,7 @@ import os
 import re
 import requests
 import shutil
+import tensorflow as tf
 
 
 API_BASE_URL = 'https://api.github.com'
@@ -121,7 +122,8 @@ def collate_python_files(user, name, access_token=None):
         return
 
     # create pathname for the to-be-downloaded tarball
-    output_path = 'tmp/{}_{}.zip'.format(user, name)
+    zip_filename = '{}_{}.zip'.format(user, name)
+    output_path = os.path.join('tmp', zip_filename)
     download_latest_release(user, name, output_path, access_token=access_token)
     extract_python_src_files(user, name, output_path)
 
@@ -162,33 +164,34 @@ def extract_python_src_files(user, repo_name, tarball_path):
     shutil.rmtree(project_path)
 
 
-def download_repositories(name='repository_list.txt', access_token=None):
-    repo_list = get_repo_list(name=name)
-    for repo_user, repo_name in tqdm(repo_list):
-        collate_python_files(repo_user, repo_name, access_token=access_token)
-
-    # delete temporary directory
-    if os.path.isdir('tmp'):
-        shutil.rmtree('tmp')
-
-
-def collate_vocab_from_dir(dirname, threshold=10, output_data_file=False):
+def collate_vocab_from_dir(dirname, threshold=20, output_data_file=False):
     assert os.path.isdir(dirname)
     counter = Counter()
 
-    for root, _, files in os.walk(dirname):
-        for pf in files:
-            # skip files that are not python src codes
-            if not pf.endswith('.py'):
-                continue
+    # count total files for tqdm progress
+    total = 0
+    for _, _, files in os.walk(dirname):
+        total += len(files)
 
-            # open each src file and collate all unique tokens
-            with codecs.open(os.path.join(root, pf), 'r', 'utf-8') as fd:
-                src_code = fd.read()
-                tokens = tokenize(src_code)
-                counter.update(tokens)
+    print('INFO - Tokenizing source files...')
+    with tqdm(total=total) as t:
+        for root, _, files in os.walk(dirname):
+            for pf in files:
+                # skip files that are not python src codes
+                if not pf.endswith('.py'):
+                    t.update()
+                    continue
+
+                # open each src file and collate all unique tokens
+                pf_path = os.path.join(root, pf)
+                with codecs.open(pf_path, 'r', 'utf8', errors='replace') as fd:
+                    src_code = fd.read()
+                    tokens = tokenize(src_code)
+                    counter.update(tokens)
+                    t.update()
 
     if output_data_file:
+        print('INFO - Writing vocab statistics...')
         create_dataset_summary_file(counter, threshold=threshold)
 
     # create different unknown tokens for different program tokens (e.g., class/variable/func names)
@@ -268,3 +271,23 @@ def create_dataset_summary_file(counter, threshold):
         print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
         for k, v in rare_types.items():
             print('{} ==> {}'.format(k, v), file=f)
+
+
+def get_tf_dataset(*, batch_size, buffer_size):
+    def tf_encode(x, y):
+        x.set_shape([None])
+        y.set_shape([None])
+
+        return x, y
+
+    dataset = tf.data.Dataset.from_generator(
+        collate_training_dataset,
+        output_types=(tf.int32, tf.int32),
+    )
+    dataset = dataset.map(tf_encode)
+    dataset = dataset.cache()
+    dataset = dataset.shuffle(buffer_size)
+    dataset = dataset.padded_batch(batch_size)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+
+    return dataset
