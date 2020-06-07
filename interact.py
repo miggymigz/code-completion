@@ -40,20 +40,26 @@ def interact(src=None, file=None):
 
     # flag to determine when to stop predicting process
     should_stop = False
+    n_generated_samples = 0
 
     # let model to output token until we get <|endofline|>
     while not should_stop:
         mask = create_masks(input_eval)
         predictions = model(input_eval, False, mask)
         predictions = predictions[:, -1:, :]
-        predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)
-        predicted_token = encoder.decode([predicted_id.numpy().item()])
+
+        top_k = tf.math.top_k(predictions, k=10)
+        probable_token_ids = tf.squeeze(top_k[1]).numpy()
+        predicted_id_idx, predicted_token = choose_token(
+            encoder, probable_token_ids)
+        predicted_id = top_k[1][:, :, predicted_id_idx]
 
         # concatenate predicted to source
         src += predicted_token
+        n_generated_samples += 1
 
         # stop if we encounter end of line
-        if predicted_token == '\n':
+        if predicted_token == '\n' and n_generated_samples > 1:
             should_stop = True
             continue
 
@@ -64,6 +70,21 @@ def interact(src=None, file=None):
     print('=' * 36 + ' OUTPUT ' + '=' * 36)
     print(src)
     print('=' * 36 + ' OUTPUT ' + '=' * 36)
+
+
+def choose_token(encoder, token_ids):
+    for i, token_id in enumerate(token_ids):
+        decoded_token = encoder.decode([token_id])
+
+        if decoded_token == '<|unknown|>':
+            try:
+                probable_token_id = token_ids[i+1]
+                probable_token = encoder.decode([probable_token_id])
+                return i+1, probable_token
+            except IndexError:
+                return i, '<|unknown|>'
+        else:
+            return i, decoded_token
 
 
 if __name__ == '__main__':
