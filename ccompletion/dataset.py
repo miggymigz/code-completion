@@ -5,18 +5,33 @@ from .hparams import get_hparams
 from .preprocessing import tokenize, START_TOKEN, UNKNOWN_TOKEN_TYPES
 
 import codecs
-import numpy as np
 import os
 import re
 import requests
 import shutil
-import tensorflow as tf
+import torch
 
 
 API_BASE_URL = 'https://api.github.com'
 REPO_INFO_API = '/repos/{}/{}'
 REPO_ZIP_URL = 'https://github.com/{}/{}/archive/{}.zip'
 EXCLUDED_PATTERN = re.compile(r'(?:__init__\.py)|(?:test_.+\.py)')
+
+
+class PythonRepositoriesDataset(torch.utils.data.Dataset):
+    def __init__(self, *, saved_file):
+        if not os.path.isfile(saved_file):
+            raise AssertionError('ERROR - {} does not exist or is invalid.'.format(saved_file) +
+                                 'ERROR - Be sure to encode the repositories by using encode.py')
+
+        self.chunks = torch.load(saved_file)
+
+    def __len__(self):
+        return len(self.chunks)
+
+    def __getitem__(self, index):
+        chunk = self.chunks[index]
+        return chunk[:-1], chunk[1:]
 
 
 def get_latest_release_tarball_url(user, name, access_token=None):
@@ -210,44 +225,6 @@ def collate_vocab_from_dir(dirname, threshold=20, output_data_file=False):
     return [START_TOKEN] + unknown_tokens + filtered_tokens
 
 
-def collate_training_dataset(name='dataset.npz'):
-    # ensure compressed dataset file exists
-    if not os.path.isfile(name):
-        print('ERROR - "dataset.npz" not found.')
-        print('ERROR - Encode the repositories first using encode.py')
-        exit(1)
-
-    # get the maximum token length from hparams
-    hparams = get_hparams()
-    max_seq_len = hparams['n_ctx']
-
-    # load encoded tokens from the compressed dataset file
-    with np.load(name, allow_pickle=True) as npz:
-        # ensure "token_chunks" array exists in the file
-        if "token_chunks" not in npz.files:
-            print('ERROR - "dataset.npz" does not contain the token chunks.')
-            print('ERROR - Be sure to encode the repositories by using encode.py')
-            exit(1)
-
-        # retrieve token chunks from the compressed dataset file
-        for src_tokens in npz['token_chunks']:
-            length = len(src_tokens)
-            assert length > 1,\
-                "ERROR - src tokens' length should be atleast greater than 1"
-
-            # divide longer tokens into chunks if it exceeds max_seq_len
-            if length > max_seq_len:
-                chunks_length = int(np.ceil(length / max_seq_len))
-
-                for j in range(chunks_length):
-                    start_index = j * max_seq_len
-                    end_index = (j+1) * max_seq_len
-                    token_chunk = src_tokens[start_index: end_index]
-                    yield token_chunk[:-1], token_chunk[1:]
-            else:
-                yield src_tokens[:-1], src_tokens[1:]
-
-
 def create_dataset_summary_file(counter, threshold):
     with codecs.open('vocab_data.txt', 'w', 'utf-8') as f:
         rare_types = {}
@@ -271,23 +248,3 @@ def create_dataset_summary_file(counter, threshold):
         print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
         for k, v in rare_types.items():
             print('{} ==> {}'.format(k, v), file=f)
-
-
-def get_tf_dataset(*, batch_size, buffer_size):
-    def tf_encode(x, y):
-        x.set_shape([None])
-        y.set_shape([None])
-
-        return x, y
-
-    dataset = tf.data.Dataset.from_generator(
-        collate_training_dataset,
-        output_types=(tf.int32, tf.int32),
-    )
-    dataset = dataset.map(tf_encode)
-    dataset = dataset.cache()
-    dataset = dataset.shuffle(buffer_size)
-    dataset = dataset.padded_batch(batch_size)
-    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
-
-    return dataset
