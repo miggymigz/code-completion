@@ -96,7 +96,7 @@ def encode(dataset_dir='repositories', token_count_threshold=10,
             print('     -', f)
 
     # save encoded tokens as a PyTorch tensor
-    token_chunks = torch.Tensor(token_chunks)
+    token_chunks = torch.tensor(token_chunks, dtype=torch.long)
     torch.save(token_chunks, output_file)
     print('INFO - Encoded dataset saved in {}'.format(output_file))
 
