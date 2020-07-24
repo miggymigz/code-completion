@@ -1,48 +1,30 @@
-from collections import Counter
+from pathlib import Path
 from tqdm import tqdm
 
-from .hparams import get_hparams
-from .preprocessing import tokenize, START_TOKEN, UNKNOWN_TOKEN_TYPES
-
 import codecs
+import csv
 import os
 import re
 import requests
 import shutil
-import torch
+import tensorflow as tf
 
 
 API_BASE_URL = 'https://api.github.com'
 REPO_INFO_API = '/repos/{}/{}'
 REPO_ZIP_URL = 'https://github.com/{}/{}/archive/{}.zip'
-EXCLUDED_PATTERN = re.compile(r'(?:__init__\.py)|(?:test_.+\.py)')
+EXCLUDED_PATTERN = re.compile(r'(?:__init__\.py)|(?:test.+\.py)')
 
 
-class PythonRepositoriesDataset(torch.utils.data.Dataset):
-    def __init__(self, *, saved_file):
-        if not os.path.isfile(saved_file):
-            raise AssertionError('ERROR - {} does not exist or is invalid.'.format(saved_file) +
-                                 'ERROR - Be sure to encode the repositories by using encode.py')
-
-        self.chunks = torch.load(saved_file)
-
-    def __len__(self):
-        return len(self.chunks)
-
-    def __getitem__(self, index):
-        chunk = self.chunks[index]
-        return chunk[:-1], chunk[1:]
-
-
-def get_latest_release_tarball_url(user, name, access_token=None):
+def get_latest_release_url(user, name, access_token=None):
     """
     Retrieves the download url of the repository as a compressed zip file.
-    The downloaded zip file will contain the latest code of the 
+    The downloaded zip file will contain the latest code of the
     default branch of the repository. Only repositories in Github are supported.
 
     Parameters:
     user (string): the username of the owner of the github repository
-    name (string): the name of the target repository 
+    name (string): the name of the target repository
 
     Returns:
     url (string): the download url of the repository as zip
@@ -58,28 +40,9 @@ def get_latest_release_tarball_url(user, name, access_token=None):
 
     # get repo's default branch
     default_branch = r.json()['default_branch']
+    url = REPO_ZIP_URL.format(user, name, default_branch)
 
-    # return download link for the source zip
-    return REPO_ZIP_URL.format(user, name, default_branch)
-
-
-def download_latest_release(user, name, path, access_token=None):
-    """
-    Downloads the github repository at github.com/{user}/{name}
-    as a zip. The downloaded zip will contain the latest source code
-    of the default branch of the repository. The downloaded file will be placed in path.
-
-    Parameters:
-    user (string): the username of the owner of the github repository
-    name (string): the name of the target repository 
-    path (string): the path in which the downloaded zip file will be written to
-    """
-    url = get_latest_release_tarball_url(user, name, access_token=access_token)
-    r = requests.get(url, stream=True)
-
-    with open(path, 'wb') as fd:
-        for chunk in r.iter_content(chunk_size=128):
-            fd.write(chunk)
+    return url, default_branch
 
 
 def get_header_for_auth(access_token=None):
@@ -94,27 +57,32 @@ def get_header_for_auth(access_token=None):
     return {'Authorization': auth_value}
 
 
-def get_repo_list(name='repository_list.txt'):
-    repos = []
+def get_repo_list(name='repositories.csv', star_count_threshold=1000):
+    # ensure csv file exists
+    if not os.path.isfile(name):
+        raise FileNotFoundError(f'"{name}" does not exist.')
 
-    with codecs.open(name, 'r', 'utf-8') as f:
-        for line in f:
-            cleaned = line.strip()
+    # the resulting repository list container
+    repositories = []
 
-            # skip lines with that starts with #
-            if line.startswith('#'):
-                continue
+    # csv file should be opened using UTF8 encoding
+    # since repository names may contain non-ASCII letters
+    with codecs.open(name, 'r', 'utf8', errors='replace') as fd:
+        reader = csv.reader(fd, delimiter=',')
 
-            if cleaned:
-                try:
-                    user, name = cleaned.split('/')
-                    repos.append((user, name))
-                except ValueError:
-                    print(
-                        'INFO - "%s" was skipped because of invalid format.' % cleaned)
-                    continue
+        # skip first line of csv file since it only contains headers
+        next(reader)
 
-    return repos
+        for repo_name, repo_stars in reader:
+            if int(repo_stars) >= star_count_threshold:
+                repositories.append(repo_name)
+            else:
+                # star count is already below the threshold
+                # that is, all of the subsequent repositories
+                # will have a star count below the threshold
+                break
+
+    return repositories
 
 
 def collate_python_files(user, name, access_token=None):
@@ -127,124 +95,57 @@ def collate_python_files(user, name, access_token=None):
     if not os.path.isdir(user_dir):
         os.mkdir(user_dir)
 
-    # ensure temporary directory exists
-    if not os.path.isdir('tmp'):
-        os.mkdir('tmp')
-
     # skip if repository is already downloaded and extracted
     container_dir = os.path.join('repositories', user, name)
-    if os.path.isdir(container_dir):
+    if os.path.isdir(container_dir) and len(os.listdir(container_dir)) != 0:
         return
 
-    # create pathname for the to-be-downloaded tarball
-    zip_filename = '{}_{}.zip'.format(user, name)
-    output_path = os.path.join('tmp', zip_filename)
-    download_latest_release(user, name, output_path, access_token=access_token)
-    extract_python_src_files(user, name, output_path)
+    # download repo's default branch and preserve python files
+    url, branch = get_latest_release_url(user, name, access_token=access_token)
+    filename = f'{user}_{name}.zip'
+    path = tf.keras.utils.get_file(filename, origin=url, extract=True)
+
+    # filter out python source files and move it to 'repositories' directory
+    extracted_dir_name = f'{name}-{branch}'
+    extracted_dir_path = os.path.join(
+        os.path.dirname(path),
+        extracted_dir_name,
+    )
+    extract_python_src_files(
+        user,
+        name,
+        extracted_dir_path,
+        exclude_tests=False,
+    )
+    os.remove(path)
 
 
-def extract_python_src_files(user, repo_name, tarball_path):
-    # ensure path exists and ends with ".zip"
-    assert os.path.isfile(tarball_path)
-    assert tarball_path.endswith('.zip')
-
-    # unpack and delete tarball
-    unpack_destination = os.path.join('tmp', user + '_' + repo_name)
-    shutil.unpack_archive(tarball_path, unpack_destination)
+def extract_python_src_files(user, name, path, exclude_tests=True):
+    # ensure extracted zip directory exists
+    assert os.path.isdir(path)
 
     # ensure target source files container directory exists
-    container_directory = os.path.join('repositories', user, repo_name)
+    container_directory = os.path.join('repositories', user, name)
     if not os.path.isdir(container_directory):
         os.mkdir(container_directory)
 
-    # the name of the folder that contains the project code
-    # is the repository name plus the version/tag
-    project_path = [os.path.join(unpack_destination, f) for f in os.listdir(unpack_destination)
-                    if os.path.isdir(os.path.join(unpack_destination, f))][0]
-
     # move all candidate python source files to the target container directory
-    for root, dirs, files in os.walk(project_path):
+    for root, dirs, files in os.walk(path):
         # remove all test directories
-        for d in dirs:
-            if d.startswith('test'):
-                shutil.rmtree(os.path.join(root, d))
+        if exclude_tests:
+            dirs[:] = [d for d in dirs if not d.lower().startswith('test')]
 
         for f in files:
-            if f.endswith('.py') and not re.match(EXCLUDED_PATTERN, f):
+            # filter out non-python source files
+            if not f.endswith('.py'):
+                continue
+
+            # include all source files if exclude_tests is False
+            # filter out __init__.py or test*.py if exclude_tests is True
+            if not exclude_tests or (exclude_tests and not re.match(EXCLUDED_PATTERN, f)):
                 file_src_path = os.path.join(root, f)
                 file_dst_path = os.path.join(container_directory, f)
                 shutil.move(file_src_path, file_dst_path)
 
     # delete original project directory
-    shutil.rmtree(project_path)
-
-
-def collate_vocab_from_dir(dirname, threshold=20, output_data_file=False):
-    assert os.path.isdir(dirname)
-    counter = Counter()
-
-    # count total files for tqdm progress
-    total = 0
-    for _, _, files in os.walk(dirname):
-        total += len(files)
-
-    print('INFO - Tokenizing source files...')
-    with tqdm(total=total) as t:
-        for root, _, files in os.walk(dirname):
-            for pf in files:
-                # skip files that are not python src codes
-                if not pf.endswith('.py'):
-                    t.update()
-                    continue
-
-                # open each src file and collate all unique tokens
-                pf_path = os.path.join(root, pf)
-                with codecs.open(pf_path, 'r', 'utf8', errors='replace') as fd:
-                    src_code = fd.read()
-                    tokens = tokenize(src_code)
-                    counter.update(tokens)
-                    t.update()
-
-    if output_data_file:
-        print('INFO - Writing vocab statistics...')
-        create_dataset_summary_file(counter, threshold=threshold)
-
-    # create different unknown tokens for different program tokens (e.g., class/variable/func names)
-    unknown_tokens = ['|{}|_<|unknown|>'.format(
-        t_type) for t_type in UNKNOWN_TOKEN_TYPES]
-
-    # delete values with count <= 10
-    # but retain tokens of that is not a literal or a constant type
-    filtered_tokens = []
-    for (t_type, token), frequency in counter.items():
-        if frequency > threshold or t_type not in UNKNOWN_TOKEN_TYPES:
-            token = '|{}|_{}'.format(t_type, token)
-            filtered_tokens.append(token)
-
-    # add start token
-    return [START_TOKEN] + unknown_tokens + filtered_tokens
-
-
-def create_dataset_summary_file(counter, threshold):
-    with codecs.open('vocab_data.txt', 'w', 'utf-8') as f:
-        rare_types = {}
-
-        # print each token's frequency
-        for (t_type, raw_token), count in counter.most_common():
-            token = '|{}|_{}'.format(t_type, raw_token)
-            print('%s: %d' % (token, count), file=f)
-
-            # collect raw tokens of rare types
-            if count <= threshold:
-                if t_type in rare_types:
-                    rare_types[t_type].append(repr(raw_token))
-                else:
-                    rare_types[t_type] = [repr(raw_token)]
-
-        print('\n', file=f)
-
-        # print out token types that didn't pass threshold
-        # also print out the corresponding raw tokens of each type
-        print('TOKENS BELOW WILL BE TREATED AS UNKNOWNS (with exceptions ofc)', file=f)
-        for k, v in rare_types.items():
-            print('{} ==> {}'.format(k, v), file=f)
+    shutil.rmtree(path)

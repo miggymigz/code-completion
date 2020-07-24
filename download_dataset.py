@@ -2,24 +2,26 @@ from ccompletion.dataset import get_repo_list, collate_python_files
 from tqdm import tqdm
 
 import fire
-import os
-import shutil
+import sys
 
 
-def download(repo_file='repository_list.txt', access_token=None):
-    repo_list = get_repo_list(name=repo_file)
-    pbar = tqdm(repo_list)
+def download(repositories='repositories.csv', access_token=None, threshold=1000):
+    repo_list = get_repo_list(
+        name=repositories,
+        star_count_threshold=threshold,
+    )
 
-    for user, name in pbar:
-        try:
-            collate_python_files(user, name, access_token=access_token)
-        except OSError as e:
-            pbar.write('WARN - Could not unpack {}/{}'.format(user, name))
-            pbar.write(str(e))
+    with tqdm(repo_list) as pbar:
+        for reponame in pbar:
+            user, name = reponame.split('/', 1)
 
-    # delete temporary directory
-    if os.path.isdir('tmp'):
-        shutil.rmtree('tmp')
+            try:
+                collate_python_files(user, name, access_token=access_token)
+            except:
+                error = sys.exc_info()[0]
+                pbar.write(f'WARN - Could not unpack {reponame}')
+                pbar.write(str(error))
+
 
 if __name__ == '__main__':
     fire.Fire(download)
