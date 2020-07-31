@@ -117,7 +117,9 @@ def collate_python_files(user, name, access_token=None):
         extracted_dir_path,
         exclude_tests=False,
     )
+
     os.remove(path)
+    print()
 
 
 def extract_python_src_files(user, name, path, exclude_tests=True):

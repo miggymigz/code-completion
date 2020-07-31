@@ -1,10 +1,15 @@
 from ccompletion.dataset import get_repo_list, collate_python_files
+from typing import Optional
 
 import fire
 import sys
 
 
-def download(repositories='repositories.csv', access_token=None, threshold=1000):
+def download(
+    repositories: str = 'repositories.csv',
+    access_token: Optional[str] = None,
+    threshold: int = 1000
+):
     repo_list = get_repo_list(
         name=repositories,
         star_count_threshold=threshold,
@@ -15,10 +20,9 @@ def download(repositories='repositories.csv', access_token=None, threshold=1000)
 
         try:
             collate_python_files(user, name, access_token=access_token)
-        except:
-            error = sys.exc_info()[0]
+        except (OSError, AssertionError) as e:
             print(f'WARN - Could not unpack {reponame}')
-            print(error)
+            print(e)
 
 
 if __name__ == '__main__':
