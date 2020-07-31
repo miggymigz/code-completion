@@ -1,22 +1,21 @@
-from transformers import GPT2LMHeadModel, GPT2Config
+from transformers import TFGPT2LMHeadModel, GPT2Config
 
 
-def build_model(*, n_vocab, n_ctx, n_embd, n_head, n_layer):
+def create_model(*, n_vocab):
     # Initialize GPT-2 configuration
     config = GPT2Config(
         vocab_size=n_vocab,
-        n_positions=n_ctx,
-        n_ctx=n_ctx,
-        n_embd=n_embd,
-        n_layer=n_layer,
-        n_head=n_head,
-        activation_function='gelu',
+        n_ctx=1024,
+        n_positions=1024,
+        n_embd=1024,
+        n_layer=24,
+        n_head=16,
+        activation_function='gelu_new',
         resid_pdrop=0.1,
         embd_pdrop=0.1,
         attn_pdrop=0.1,
-        layer_norm_epsilon=1e-5,
-        initializer_range=16,
+        layer_norm_epsilon=1e-05,
+        initializer_range=0.02,
     )
 
-    return GPT2LMHeadModel(config)
-
+    return TFGPT2LMHeadModel(config)
