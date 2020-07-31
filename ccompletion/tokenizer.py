@@ -1,98 +1,140 @@
-from transformers import PreTrainedTokenizer
-from .dataset import collate_vocab_from_dir
-from .hparams import get_hparams, save_hparams
-from .preprocessing import tokenize, START_TOKEN
-
+from functools import lru_cache
+from io import BytesIO
+from tqdm import tqdm
+from typing import Optional, Generator
 
 import codecs
 import json
 import os
-
-SPECIAL_TOKENS = {
-    START_TOKEN: '',
-    '|Token.Text|_<|endofline|>': '\n',
-    '|Token.Text|_<|space|>': ' ',
-    '|Token.Text|_<|tab|>': '    ',
-}
+import token
+import tokenize as ptokenize
+import youtokentome as yttm
 
 
-class CodeCompletionTokenizer(PreTrainedTokenizer):
-    def __init__(self, encoder, unk_token='<|endofsrc|>', bos_token='<|endofsrc|>', eos_token='<|endofsrc|>', **kwargs):
-        super().__init__(bos_token=bos_token, eos_token=eos_token, unk_token=unk_token, **kwargs)
-        self.encoder = encoder
-        self.decoder = {v: k for k, v in self.encoder.items()}
-
-    @property
-    def vocab_size(self):
-        return len(self.encoder)
-
-    def get_vocab(self):
-        return dict(self.encoder, **self.added_tokens_encoder)
-
-    def _tokenize(self, code):
-        tokens = tokenize(code)
-        return tokens[:-1]
-
-    def _convert_token_to_id(self, token):
-        t_type, raw_token = token
-        token = '|{}|_{}'.format(t_type, raw_token)
-
-        try:
-            return self.encoder[token]
-        except KeyError:
-            token = '|{}|_<|unknown|>'.format(t_type)
-            return self.encoder[token]
-
-    def _convert_id_to_token(self, index):
-        return self.decoder[index]
-
-    def convert_tokens_to_string(self, tokens):
-        src = ''
-
-        for t_type, raw_token in tokens:
-            concatenated_token = '|{}|_{}'.format(t_type, raw_token)
-
-            try:
-                src += SPECIAL_TOKENS[concatenated_token]
-            except KeyError:
-                if 'String' in t_type:
-                    src += "'{}'".format(raw_token)
-                else:
-                    src += raw_token
-
-        return src
+@lru_cache()
+def bytes_to_unicode():
+    """
+    Returns list of utf-8 byte and a corresponding list of unicode strings.
+    The reversible bpe codes work on unicode strings.
+    # of unicode characters in your vocab if you want to avoid UNKs.
+    This means you need a large
+    When you're at something like a 10B token dataset you end up needing around 5K for decent coverage.
+    This is a signficant percentage of your normal, say, 32K bpe vocab.
+    To avoid that, we want lookup tables between utf-8 bytes and unicode strings.
+    And avoids mapping to whitespace/control characters the bpe code barfs on.
+    """
+    bs = list(range(ord("!"), ord("~")+1)) + \
+        list(range(ord("¡"), ord("¬")+1)) + \
+        list(range(ord("®"), ord("ÿ")+1))
+    cs = bs[:]
+    n = 0
+    for b in range(2**8):
+        if b not in bs:
+            bs.append(b)
+            cs.append(2**8+n)
+            n += 1
+    cs = [chr(n) for n in cs]
+    return dict(zip(bs, cs))
 
 
-def get_tokenizer(threshold=20):
-    # attempt to load encoder from the saved json file
-    if os.path.isfile('models/encoder.json'):
-        with codecs.open('models/encoder.json', 'r') as f:
-            encoder = json.load(f)
-            return CodeCompletionTokenizer(encoder=encoder)
+def count_files(directory: str) -> int:
+    """
+    Count total files contained in the directory
+    """
+    total = 0
+    for _, _, files in os.walk(directory):
+        total += len(files)
 
-    print('INFO - encoder.json does not exist.')
-    print('INFO - Will generate encoder.json from the downloaded repositories')
+    return total
 
-    # create a new vocabulary from the dataset
-    vocabulary = collate_vocab_from_dir(
-        'repositories',
-        threshold=threshold,
-        output_data_file=True
-    )
-    encoder = {word: i for i, word in enumerate(vocabulary)}
 
-    # ensure models directory exists
-    if not os.path.isdir('models'):
-        os.mkdir('models')
+class PythonTokenizer:
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        errors: str = 'replace'
+    ):
+        self.byte_encoder = bytes_to_unicode()
+        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
+        self.bpe = yttm.BPE(model=vocab_file) if vocab_file else None
+        self.errors = errors
 
-    # change hyperparameter n_vocab whenever encoder.json changes
-    # read all other hyperparameters
-    hparams = get_hparams(name='models/hparams.json')
-    hparams['n_vocab'] = len(vocabulary)
-    save_hparams(name='models/hparams.json', **hparams)
+    def split(self, src: str) -> Generator[str, None, None]:
+        """
+        Splits source code (string) into python tokens
+        """
+        src_as_bytes = BytesIO(src.encode('utf-8'))
+        for token_info in ptokenize.tokenize(src_as_bytes.readline):
+            token_type = token_info.exact_type
+            token_value = token_info.string
+            token = f'{token_type}||{token_value}'
+            yield ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
 
-    # persist created dictionary
-    with codecs.open('models/encoder.json', 'w', 'utf-8') as f:
-        json.dump(encoder, f)
+    def unsplit(self, tokens: [str]) -> str:
+        """
+        Merges back the tokens split by `self.split`.
+        """
+        result = []
+        for token in tokens:
+            token_as_bytes = bytearray([self.byte_decoder[c] for c in token])
+            token = token_as_bytes.decode('utf-8', errors=self.errors)
+            token_type, token_value = token.split('||', 1)
+            result.append((int(token_type), token_value))
 
-    return CodeCompletionTokenizer(encoder=encoder)
+        untokenized = ptokenize.untokenize(result)
+        untokenized_decoded = untokenized.decode('utf-8', errors=self.errors)
+        return untokenized_decoded
+
+    def encode(self, src: str, return_ids: bool = True) -> [int]:
+        """
+        Splits the given source code into tokens and then into subwords.
+        After that, the subwords are then converted into ids if `return_ids` is true.
+        """
+        tokens = list(self.split(src))
+        output_type = yttm.OutputType.ID if return_ids else yttm.OutputType.SUBWORD
+        bpe_result = self.bpe.encode(tokens, output_type=output_type)
+
+        return [t for tt in bpe_result for t in tt]
+
+    def decode(self, token_ids: [int]) -> str:
+        """
+        Decodes the given subword ids (created by `self.encode`) into string.
+        """
+        tokens = self.bpe.decode(token_ids)[0].split()
+        return self.unsplit(tokens)
+
+    def train(self, dataset_dir: str, output_path: str, n_vocab: int) -> None:
+        """
+        Trains bpe to all of the python source files located in `dataset_dir`
+        """
+        if self.bpe is not None:
+            raise AssertionError(f'Cannot train on already trained tokenizer!')
+
+        concatenated_output_path = '_training_aux'
+        self.__concatenate_dataset(
+            dataset_dir=dataset_dir,
+            output_path=concatenated_output_path,
+        )
+        self.bpe = yttm.BPE.train(
+            data=concatenated_output_path,
+            model=output_path,
+            vocab_size=n_vocab,
+        )
+
+    def __concatenate_dataset(self, dataset_dir: str, output_path: str) -> None:
+        file_count = count_files(dataset_dir)
+        with tqdm(total=file_count) as t, codecs.open(output_path, 'w') as ofd:
+            for root, _, files in os.walk(dataset_dir):
+                for pf in files:
+                    # skip files that are not python src codes
+                    if not pf.endswith('.py'):
+                        t.update()
+                        continue
+
+                    # open each src file and collate all unique tokens
+                    pf_path = os.path.join(root, pf)
+                    with codecs.open(pf_path, 'r', 'utf8', errors=self.errors) as fd:
+                        src_code = fd.read().strip()
+                        concatenated = ' '.join(self.split(src_code))
+                        print(concatenated, file=ofd)
+                        t.update()
