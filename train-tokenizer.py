@@ -27,7 +27,7 @@ def train_tokenizer(
     tokenizer = PythonTokenizer()
     tokenizer.train(
         dataset_dir=dataset_dir,
-        output_path=output_path,
+        output_path=os.path.join('models', output_path),
         n_vocab=n_vocab,
         n_threads=n_threads,
     )
