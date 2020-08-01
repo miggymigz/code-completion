@@ -101,16 +101,30 @@ def collate_python_files(user, name, access_token=None):
         return
 
     # download repo's default branch and preserve python files
-    url, branch = get_latest_release_url(user, name, access_token=access_token)
+    url, _ = get_latest_release_url(user, name, access_token=access_token)
     filename = f'{user}_{name}.zip'
-    path = tf.keras.utils.get_file(filename, origin=url, extract=True)
+    path = tf.keras.utils.get_file(
+        filename,
+        origin=url,
+        extract=True,
+        cache_dir='.keras',
+        cache_subdir='code-completion-repos',
+    )
+
+    # determine extracted directory name
+    cache_dir_path = os.path.dirname(path)
+    _dirs = [
+        f
+        for f in os.listdir(cache_dir_path)
+        if os.path.isdir(os.path.join(cache_dir_path, f))
+    ]
+    assert len(_dirs) == 1, "More directories were found in extracted dir"
+    extracted_dir_path = os.path.join(
+        cache_dir_path,
+        _dirs[0],
+    )
 
     # filter out python source files and move it to 'repositories' directory
-    extracted_dir_name = f'{name}-{branch}'
-    extracted_dir_path = os.path.join(
-        os.path.dirname(path),
-        extracted_dir_name,
-    )
     extract_python_src_files(
         user,
         name,
@@ -118,13 +132,14 @@ def collate_python_files(user, name, access_token=None):
         exclude_tests=False,
     )
 
+    # remove downloaded zip
     os.remove(path)
     print()
 
 
 def extract_python_src_files(user, name, path, exclude_tests=True):
     # ensure extracted zip directory exists
-    assert os.path.isdir(path)
+    assert os.path.isdir(path), f"{path} directory does not exist!"
 
     # ensure target source files container directory exists
     container_directory = os.path.join('repositories', user, name)
