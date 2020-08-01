@@ -1,8 +1,11 @@
+from abc import ABC, abstractmethod
 from functools import lru_cache
 from io import BytesIO
+from pygments.lexers import Python3Lexer
 from tqdm import tqdm
-from typing import Optional, Generator
+from typing import Optional, Generator, List
 
+import autopep8
 import codecs
 import os
 import tokenize as ptokenize
@@ -46,7 +49,7 @@ def count_files(directory: str) -> int:
     return total
 
 
-class PythonTokenizer:
+class BaseTokenizer(ABC):
     def __init__(
         self,
         vocab_file: Optional[str] = None,
@@ -57,33 +60,27 @@ class PythonTokenizer:
         self.bpe = yttm.BPE(model=vocab_file) if vocab_file else None
         self.errors = errors
 
-    def split(self, src: str) -> Generator[str, None, None]:
+    @abstractmethod
+    def split(self, src: str, normalize: bool = True, byte_encode: bool = True) -> List[str]:
         """
-        Splits source code (string) into python tokens
+        Splits source code (string) into tokens
         """
-        src_as_bytes = BytesIO(src.encode('utf-8'))
-        for token_info in ptokenize.tokenize(src_as_bytes.readline):
-            token_type = token_info.exact_type
-            token_value = token_info.string
-            token = f'{token_type}||{token_value}'
-            yield ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
+        pass
 
-    def unsplit(self, tokens: [str]) -> str:
+    @abstractmethod
+    def unsplit(self, tokens: List[str], byte_encoded: bool = True) -> str:
         """
-        Merges back the tokens split by `self.split`.
+        Merges back the tokens split by `self.split` into a single string
         """
-        result = []
-        for token in tokens:
-            token_as_bytes = bytearray([self.byte_decoder[c] for c in token])
-            token = token_as_bytes.decode('utf-8', errors=self.errors)
-            token_type, token_value = token.split('||', 1)
-            result.append((int(token_type), token_value))
+        pass
 
-        untokenized = ptokenize.untokenize(result)
-        untokenized_decoded = untokenized.decode('utf-8', errors=self.errors)
-        return untokenized_decoded
+    def byte_encode(self, token):
+        return ''.join(self.byte_encoder[c] for c in token.encode('utf-8'))
 
-    def encode(self, src: str, return_ids: bool = True) -> [int]:
+    def byte_decode(self, token):
+        return bytearray([self.byte_decoder[c] for c in token]).decode('utf-8')
+
+    def encode(self, src: str, return_ids: bool = True) -> List[int]:
         """
         Splits the given source code into tokens and then into subwords.
         After that, the subwords are then converted into ids if `return_ids` is true.
@@ -101,7 +98,7 @@ class PythonTokenizer:
         tokens = self.bpe.decode(token_ids)[0].split()
         return self.unsplit(tokens)
 
-    def train(self, dataset_dir: str, output_path: str, n_vocab: int, n_threads: int = -1) -> None:
+    def train(self, dataset_dir: str, concatenated_output_path: str, output_path: str, n_vocab: int, n_threads: int = -1) -> None:
         """
         Trains bpe to all of the python source files located in `dataset_dir`
         """
@@ -109,7 +106,6 @@ class PythonTokenizer:
             raise AssertionError(f'Cannot train on already trained tokenizer!')
 
         # concatenate dataset first before training BPE
-        concatenated_output_path = '_training_aux'
         if os.path.isfile(concatenated_output_path):
             print('INFO - Will skip concatenating dataset files')
         else:
@@ -143,10 +139,14 @@ class PythonTokenizer:
                     with codecs.open(pf_path, 'r', 'utf8', errors=self.errors) as fd:
                         src_code = fd.read().strip()
 
+                        # do not include empty files
                         if not src_code:
                             t.write(f'WARN - Empty file: {pf_path}')
                             t.update()
                             continue
+
+                        # format source code before feeding to tokenizer trainer
+                        src_code = autopep8.fix_code(src_code)
 
                         try:
                             tokens = tuple(self.split(src_code))
@@ -163,3 +163,69 @@ class PythonTokenizer:
                             print(concatenated, file=ofd)
                         finally:
                             t.update()
+
+
+class PythonTokenizer(BaseTokenizer):
+    def split(self, src: str, normalize: bool = True, byte_encode: bool = True) -> List[str]:
+        tokens = []
+        src_as_bytes = BytesIO(src.encode('utf-8'))
+
+        for token_info in ptokenize.tokenize(src_as_bytes.readline):
+            token_type = token_info.exact_type
+            token_value = token_info.string
+            token = f'{token_type}||{token_value}'
+
+            if byte_encode:
+                token = self.byte_encode(token)
+
+            tokens.append(token)
+
+        return tokens
+
+    def unsplit(self, tokens: List[str], byte_encoded: bool = True) -> str:
+        result = []
+        for token in tokens:
+            if byte_encoded:
+                token = self.byte_decode(token)
+
+            token_type, token_value = token.split('||', 1)
+            result.append((int(token_type), token_value))
+
+        untokenized = ptokenize.untokenize(result)
+        untokenized_decoded = untokenized.decode('utf-8', errors=self.errors)
+        return untokenized_decoded
+
+
+class PygmentsTokenizer(BaseTokenizer):
+    def __init__(
+        self,
+        vocab_file: Optional[str] = None,
+        errors: str = 'replace'
+    ):
+        self.lexer = Python3Lexer()
+        self.byte_encoder = bytes_to_unicode()
+        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
+        self.bpe = yttm.BPE(model=vocab_file) if vocab_file else None
+        self.errors = errors
+
+    def split(self, src: str, normalize: bool = True, byte_encoded: bool = True) -> List[str]:
+        tokens = [token for _, token in self.lexer.get_tokens(src)]
+
+        if not normalize:
+            last_src_char = src[-1]
+            last_token = tokens[-1]
+
+            # Pygments adds an extra linebreak token at the end
+            if not last_src_char.isspace():
+                del tokens[-1]
+            elif last_src_char != last_token:
+                tokens[-1] = last_src_char
+
+        if byte_encoded:
+            tokens = [self.byte_encode(token) for token in tokens]
+
+        return tokens
+
+    def unsplit(self, tokens: List[str]) -> str:
+        tokens = [self.byte_decode(token) for token in tokens]
+        return ''.join(tokens)

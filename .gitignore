@@ -9,7 +9,8 @@ models
 training_checkpoints
 checkpoints
 dataset.npz
-_training_aux
+_pygments_aux
+_python_aux
 
 # python wheel stuff
 dependency_links.txt
