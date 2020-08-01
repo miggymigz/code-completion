@@ -1,4 +1,4 @@
-from ccompletion.dataset import get_repo_list, collate_python_files
+from ccompletion.download_utils import get_repo_list, collate_python_files
 from typing import Optional
 
 import fire
