@@ -146,12 +146,17 @@ class PythonTokenizer:
                         src_code = fd.read().strip()
 
                         try:
-                            concatenated = ' '.join(self.split(src_code))
-                            print(concatenated, file=ofd)
+                            tokens = tuple(self.split(src_code))
                         except (ptokenize.TokenError, IndentationError, SyntaxError):
                             # ignore python files that could not be tokenized
                             # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
                             # this way, our dataset will only contain grammatical python source files
-                            t.write(f'WARN - Could not tokenize {pf_path}.')
+                            t.write(f'WARN - Malformed source file: {pf_path}')
+                        except (LookupError, UnicodeDecodeError):
+                            # some python files in the repositories use encodings other than
+                            t.write(f'WARN - Unsupported encoding: {pf_path}')
+                        else:
+                            concatenated = ' '.join(tokens)
+                            print(concatenated, file=ofd)
                         finally:
                             t.update()

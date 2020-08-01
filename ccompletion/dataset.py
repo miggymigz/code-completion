@@ -96,8 +96,10 @@ def collate_python_files(user, name, access_token=None):
         os.mkdir(user_dir)
 
     # skip if repository is already downloaded and extracted
+    # empty directories are okay because there are repositories
+    # that does not contain any python script (or were filtered as unwanted)
     container_dir = os.path.join('repositories', user, name)
-    if os.path.isdir(container_dir) and len(os.listdir(container_dir)) != 0:
+    if os.path.isdir(container_dir):
         return
 
     # download repo's default branch and preserve python files
