@@ -4,9 +4,7 @@ from tqdm import tqdm
 from typing import Optional, Generator
 
 import codecs
-import json
 import os
-import token
 import tokenize as ptokenize
 import youtokentome as yttm
 
