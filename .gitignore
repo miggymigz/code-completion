@@ -1,12 +1,15 @@
 __pycache__
 .vscode
 .DS_Store
+
+# project-specific stuff
 repositories
 tmp
 models
 training_checkpoints
 checkpoints
 dataset.npz
+_training_aux
 
 # python wheel stuff
 dependency_links.txt

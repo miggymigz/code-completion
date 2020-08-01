@@ -103,22 +103,29 @@ class PythonTokenizer:
         tokens = self.bpe.decode(token_ids)[0].split()
         return self.unsplit(tokens)
 
-    def train(self, dataset_dir: str, output_path: str, n_vocab: int) -> None:
+    def train(self, dataset_dir: str, output_path: str, n_vocab: int, n_threads: int = -1) -> None:
         """
         Trains bpe to all of the python source files located in `dataset_dir`
         """
         if self.bpe is not None:
             raise AssertionError(f'Cannot train on already trained tokenizer!')
 
+        # concatenate dataset first before training BPE
         concatenated_output_path = '_training_aux'
-        self.__concatenate_dataset(
-            dataset_dir=dataset_dir,
-            output_path=concatenated_output_path,
-        )
+        if os.path.isfile(concatenated_output_path):
+            print('INFO - Will skip concatenating dataset files')
+        else:
+            self.__concatenate_dataset(
+                dataset_dir=dataset_dir,
+                output_path=concatenated_output_path,
+            )
+
+        # train BPE using _training_aux
         self.bpe = yttm.BPE.train(
             data=concatenated_output_path,
             model=output_path,
             vocab_size=n_vocab,
+            n_threads=n_threads,
         )
 
     def __concatenate_dataset(self, dataset_dir: str, output_path: str) -> None:
@@ -131,10 +138,20 @@ class PythonTokenizer:
                         t.update()
                         continue
 
-                    # open each src file and collate all unique tokens
                     pf_path = os.path.join(root, pf)
+                    t.set_description(pf_path)
+
+                    # open each src file and collate all unique tokens
                     with codecs.open(pf_path, 'r', 'utf8', errors=self.errors) as fd:
                         src_code = fd.read().strip()
-                        concatenated = ' '.join(self.split(src_code))
-                        print(concatenated, file=ofd)
-                        t.update()
+
+                        try:
+                            concatenated = ' '.join(self.split(src_code))
+                            print(concatenated, file=ofd)
+                        except (ptokenize.TokenError, IndentationError, SyntaxError):
+                            # ignore python files that could not be tokenized
+                            # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
+                            # this way, our dataset will only contain grammatical python source files
+                            t.write(f'WARN - Could not tokenize {pf_path}.')
+                        finally:
+                            t.update()
