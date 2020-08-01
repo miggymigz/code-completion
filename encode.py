@@ -1,17 +1,18 @@
+from ccompletion.tokenizer import PythonTokenizer
 from tqdm import tqdm
-
-from ccompletion.encoder import get_encoder
-from ccompletion.hparams import get_hparams
 
 import codecs
 import fire
-import math
 import os
-import torch
+import pickle
+import tokenize as ptokenize
 
 
-def encode(dataset_dir='repositories', token_count_threshold=10,
-           output_file='dataset.pt', frequency_threshold=20, redo=False):
+def encode(
+    dataset_dir='repositories',
+    output_file='dataset.txt',
+    redo=False
+):
     """
     Pre-encodes all of the files in the `dataset_dir` directory.
     This uses the token IDs provided by `ccompletion.encoder`. This module
@@ -21,11 +22,7 @@ def encode(dataset_dir='repositories', token_count_threshold=10,
 
     Parameters:
     dataset_dir (string): the directory whose files will be encoded
-    token_count_threshold (int): files whose token count is less than this threshold
-        will be ignored and won't be included in the training
     output_file (string): the name of the serialized output file
-    frequency_threshold (int): tokens whose frequency is below this threshold will
-        not be treated as unique and will be encoded as `<|unknown|>`
     redo (boolean): flag that determines whether to redo this encoding process
         even if `output_file` already exists
     """
@@ -41,10 +38,7 @@ def encode(dataset_dir='repositories', token_count_threshold=10,
         exit(0)
 
     total_file_count = get_total_file_count(dataset_dir)
-    encoder = get_encoder(threshold=frequency_threshold)
-    max_seq_len = get_hparams()['n_ctx'] + 1
-    token_chunks = []
-    ignored_files = []
+    tokenizer = PythonTokenizer(vocab_file='models/vocab.bpe')
 
     print('INFO - Encoding source files...')
     with tqdm(total=total_file_count) as pbar:
@@ -59,46 +53,33 @@ def encode(dataset_dir='repositories', token_count_threshold=10,
                 pf_path = os.path.join(root, pf)
                 with codecs.open(pf_path, 'r', 'utf8', errors='replace') as fd:
                     # read source code of current file fd
-                    src = fd.read()
+                    src = fd.read().strip()
 
-                    # tokenize source code of the current file
-                    tokens = encoder.encode(src, add_start_token=True)
-                    n_tokens = len(tokens)
-
-                    # ignore files that have tokens of length < threshold
-                    if n_tokens < token_count_threshold:
-                        ignored_files.append(pf_path)
+                    # ignore files that are empty
+                    if not src:
+                        pbar.write(f'INFO - Empty file: {pf_path}')
                         pbar.update()
                         continue
 
-                    # divide longer tokens into chunks if it exceeds max_seq_len
-                    if n_tokens > max_seq_len:
-                        chunks_length = math.ceil(n_tokens / max_seq_len)
-
-                        for j in range(chunks_length):
-                            start_index = j * max_seq_len
-                            end_index = (j+1) * max_seq_len
-
-                            token_chunk = tokens[start_index: end_index]
-                            token_chunk = pad(token_chunk, max_seq_len)
-                            token_chunks.append(token_chunk)
+                    # tokenize source code of the current file
+                    try:
+                        tokens = tokenizer.encode(src)
+                    except (ptokenize.TokenError, IndentationError, SyntaxError):
+                        # ignore python files that could not be tokenized
+                        # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
+                        # this way, our dataset will only contain grammatical python source files
+                        pbar.write(f'INFO - Malformed file: {pf_path}')
+                    except (LookupError, UnicodeDecodeError):
+                        # some python files in the repositories use encodings other than
+                        pbar.write(f'INFO - Unsupported encoding: {pf_path}')
                     else:
-                        tokens = pad(tokens, max_seq_len)
-                        token_chunks.append(tokens)
+                        # pickle dump current tokens
+                        with open(output_file, 'ab') as fd:
+                            pickle.dump(tokens, fd)
+                    finally:
+                        pbar.update()
 
-                    # update tqdm progress for this file
-                    pbar.update()
-
-    # print list of ignored files (if not empty)
-    if ignored_files:
-        print('INFO - Ignored files:')
-        for f in ignored_files:
-            print('     -', f)
-
-    # save encoded tokens as a PyTorch tensor
-    token_chunks = torch.tensor(token_chunks, dtype=torch.long)
-    torch.save(token_chunks, output_file)
-    print('INFO - Encoded dataset saved in {}'.format(output_file))
+    print(f'INFO - Encoded dataset saved in {output_file}')
 
 
 def pad(arr, max_seq_len, value=0):
@@ -119,6 +100,12 @@ def pad(arr, max_seq_len, value=0):
 
     remainder = max_seq_len - len(arr)
     return arr + [value] * remainder
+
+
+def iterpickle(fname):
+    with open(fname, 'rb') as fd:
+        while fd.peek(1):
+            yield pickle.load(fd)
 
 
 def get_total_file_count(dataset_dir):

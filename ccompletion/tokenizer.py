@@ -143,6 +143,11 @@ class PythonTokenizer:
                     with codecs.open(pf_path, 'r', 'utf8', errors=self.errors) as fd:
                         src_code = fd.read().strip()
 
+                        if not src_code:
+                            t.write(f'WARN - Empty file: {pf_path}')
+                            t.update()
+                            continue
+
                         try:
                             tokens = tuple(self.split(src_code))
                         except (ptokenize.TokenError, IndentationError, SyntaxError):
