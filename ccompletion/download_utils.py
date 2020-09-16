@@ -9,6 +9,7 @@ import re
 import requests
 import shutil
 import tensorflow as tf
+import zipfile
 
 
 API_BASE_URL = 'https://api.github.com'
@@ -112,13 +113,8 @@ def collate_python_files(reponame: str, output_path: Path, access_token: Optiona
     ))
 
     # determine extracted directory name
-    _dirs = [
-        f
-        for f in path.parent.glob('*')
-        if f.is_dir()
-    ]
-    assert len(_dirs) == 1, "More directories were found in extracted dir"
-    extracted_dir_path = path.parent / _dirs[0]
+    top_dir = get_top_dir(path)
+    extracted_dir_path = path.parent / top_dir
 
     # filter out python source files and move it to 'repositories' directory
     extract_python_src_files(
@@ -148,3 +144,24 @@ def extract_python_src_files(user: str, name: str, path: Path, output_path: Path
 
     # delete original project directory
     shutil.rmtree(path)
+
+
+def get_top_dir(repo_path: Path):
+    """
+    Repository archives usually contains a single directory which contains
+    the actual files of that repository. When downloading the file, 
+    `tf.keras.utils.get_file` will automatically extract this directory. So,
+    this function returns the name of that directory so that it can be used
+    to filter the files further.
+    """
+    zf = zipfile.ZipFile(repo_path)
+    topdir = list(set([
+        y
+        for x in zf.namelist()
+        if (y := os.path.dirname(x)) and '/' not in y and '\\' not in y
+    ]))
+
+    # only one directory name should remain
+    assert len(topdir) == 1, f"{repo_path}'s format is unknown"
+
+    return topdir[0]
