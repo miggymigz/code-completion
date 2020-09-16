@@ -10,6 +10,7 @@ import requests
 import shutil
 import tensorflow as tf
 import uuid
+import warnings
 import zipfile
 
 
@@ -108,6 +109,7 @@ def collate_python_files(reponame: str, output_path: Path, access_token: Optiona
     except FileNotFoundError:
         # for some reason, the repository could not be found anymore
         # maybe it was set to private or deleted entirely
+        warnings.warn(f'{reponame} is either private or deleted.')
         return
 
     # download repo's default branch and preserve python files
@@ -168,13 +170,16 @@ def get_top_dir(repo_path: Path):
     to filter the files further.
     """
     zf = zipfile.ZipFile(repo_path)
-    topdir = list(set([
-        y
-        for x in zf.namelist()
-        if (y := os.path.dirname(x)) and '/' not in y and '\\' not in y
-    ]))
+
+    # get top directory
+    topdir = []
+    for x in zf.namelist():
+        y = os.path.dirname(x)
+        if y and '/' not in y and '\\' not in y:
+            topdir.append(y)
 
     # only one directory name should remain
+    topdir = list(set(topdir))
     assert len(topdir) == 1, f"{repo_path}'s format is unknown"
 
     return topdir[0]
