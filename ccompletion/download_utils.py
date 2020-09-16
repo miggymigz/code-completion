@@ -10,7 +10,6 @@ import requests
 import shutil
 import tensorflow as tf
 import uuid
-import warnings
 import zipfile
 
 
@@ -38,8 +37,8 @@ def get_latest_release_url(user, name, access_token=None):
     r = requests.get(api_url, headers=headers)
 
     # Ensure API requests return OK
-    if r.status_code != 200:
-        raise AssertionError(r.text)
+    if r.status_code == 404:
+        raise FileNotFoundError()
 
     # get repo's default branch
     default_branch = r.json()['default_branch']
@@ -103,14 +102,8 @@ def collate_python_files(reponame: str, output_path: Path, access_token: Optiona
     if container_path.exists():
         return
 
-    try:
-        # get the repository's public archive download URL
-        url, _ = get_latest_release_url(user, name, access_token=access_token)
-    except FileNotFoundError:
-        # for some reason, the repository could not be found anymore
-        # maybe it was set to private or deleted entirely
-        warnings.warn(f'{reponame} is either private or deleted.')
-        return
+    # get the repository's public archive download URL
+    url, _ = get_latest_release_url(user, name, access_token=access_token)
 
     # download repo's default branch and preserve python files
     filename = f'{user}_{name}.zip'
