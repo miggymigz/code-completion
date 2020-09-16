@@ -102,8 +102,15 @@ def collate_python_files(reponame: str, output_path: Path, access_token: Optiona
     if container_path.exists():
         return
 
+    try:
+        # get the repository's public archive download URL
+        url, _ = get_latest_release_url(user, name, access_token=access_token)
+    except FileNotFoundError:
+        # for some reason, the repository could not be found anymore
+        # maybe it was set to private or deleted entirely
+        return
+
     # download repo's default branch and preserve python files
-    url, _ = get_latest_release_url(user, name, access_token=access_token)
     filename = f'{user}_{name}.zip'
     path = Path(tf.keras.utils.get_file(
         filename,
