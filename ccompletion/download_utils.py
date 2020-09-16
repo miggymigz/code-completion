@@ -140,7 +140,7 @@ def extract_python_src_files(user: str, name: str, path: Path, output_path: Path
     # move all candidate python source files to the target container directory
     for f in path.glob('**/*'):
         # only retain Python source files
-        if str(f).endswith('.py'):
+        if f.is_file() and str(f).endswith('.py'):
             try:
                 dst_fname = f.name
                 shutil.move(f, container_path / dst_fname)
