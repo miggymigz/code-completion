@@ -9,6 +9,7 @@ import re
 import requests
 import shutil
 import tensorflow as tf
+import uuid
 import zipfile
 
 
@@ -140,7 +141,12 @@ def extract_python_src_files(user: str, name: str, path: Path, output_path: Path
     for f in path.glob('**/*'):
         # only retain Python source files
         if str(f).endswith('.py'):
-            shutil.move(f, container_path / f.name)
+            try:
+                dst_fname = f.name
+                shutil.move(f, container_path / dst_fname)
+            except FileExistsError:
+                dst_fname = str(uuid.uuid1()) + '.py'
+                shutil.move(f, container_path / dst_fname)
 
     # delete original project directory
     shutil.rmtree(path)
