@@ -1,15 +1,18 @@
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from io import BytesIO
-from pygments.lexers import Python3Lexer
+from pathlib import Path
 from tqdm import tqdm
-from typing import Optional, Generator, List
+from typing import Optional, Generator, List, Union
+
+from pygments.lexers import PythonLexer
+from tokenizers import SentencePieceBPETokenizer
+from .utils import read_source_file
 
 import autopep8
-import codecs
+import chardet
 import os
 import tokenize as ptokenize
-import youtokentome as yttm
 
 
 @lru_cache()
@@ -52,13 +55,23 @@ def count_files(directory: str) -> int:
 class BaseTokenizer(ABC):
     def __init__(
         self,
-        vocab_file: Optional[str] = None,
+        vocab_path: Optional[Union[str, Path]] = None,
         errors: str = 'replace'
     ):
         self.byte_encoder = bytes_to_unicode()
         self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
-        self.bpe = yttm.BPE(model=vocab_file) if vocab_file else None
         self.errors = errors
+
+        # initialize subword units tokenizer
+        # if vocab_path is given and is valid
+        if isinstance(vocab_path, str):
+            vocab_path = Path(vocab_path)
+
+        if vocab_path and vocab_path.is_dir():
+            self.bpe = SentencePieceBPETokenizer(
+                vocab_file=str(vocab_path / 'vocab.json'),
+                merges_file=str(vocab_path / 'merges.txt'),
+            )
 
     @abstractmethod
     def split(self, src: str, normalize: bool = True, byte_encode: bool = True) -> List[str]:
@@ -86,94 +99,97 @@ class BaseTokenizer(ABC):
         After that, the subwords are then converted into ids if `return_ids` is true.
         """
         tokens = list(self.split(src))
-        output_type = yttm.OutputType.ID if return_ids else yttm.OutputType.SUBWORD
-        bpe_result = self.bpe.encode(tokens, output_type=output_type)
+        output = self.bpe.encode(' '.join(tokens))
+        return output.ids if return_ids else output.tokens
 
-        return [t for tt in bpe_result for t in tt]
-
-    def decode(self, token_ids: [int]) -> str:
+    def decode(self, token_ids: List[int]) -> str:
         """
         Decodes the given subword ids (created by `self.encode`) into string.
         """
-        tokens = self.bpe.decode(token_ids)[0].split()
+        tokens = self.bpe.decode(token_ids).split()
         return self.unsplit(tokens)
 
-    def train(self, dataset_dir: str, concatenated_output_path: str, output_path: str, n_vocab: int, n_threads: int = -1) -> None:
+    def train(
+        self,
+        repos_path: Path,
+        output_path: Path,
+        n_vocab: int
+    ):
         """
-        Trains bpe to all of the python source files located in `dataset_dir`
+        Trains bpe to all of the python source files located in `repos_path`
         """
-        if self.bpe is not None:
+        if hasattr(self, 'bpe'):
             raise AssertionError(f'Cannot train on already trained tokenizer!')
 
         # concatenate dataset first before training BPE
-        if os.path.isfile(concatenated_output_path):
+        concatenated_output_path = output_path / '_aux_concat'
+        if concatenated_output_path.exists():
             print('INFO - Will skip concatenating dataset files')
         else:
             self.__concatenate_dataset(
-                dataset_dir=dataset_dir,
+                repos_path=repos_path,
                 output_path=concatenated_output_path,
             )
 
         # train BPE using _training_aux
-        self.bpe = yttm.BPE.train(
-            data=concatenated_output_path,
-            model=output_path,
-            vocab_size=n_vocab,
-            n_threads=n_threads,
-        )
+        bpe = SentencePieceBPETokenizer()
+        bpe.train([str(concatenated_output_path)], vocab_size=n_vocab)
+        bpe.save_model(str(output_path))
 
-    def __concatenate_dataset(self, dataset_dir: str, output_path: str) -> None:
-        file_count = count_files(dataset_dir)
-        with tqdm(total=file_count) as t, codecs.open(output_path, 'w') as ofd:
-            for root, _, files in os.walk(dataset_dir):
+    def __concatenate_dataset(self, repos_path: Path, output_path: Path):
+        # make sure repos directory exists
+        assert repos_path.exists() and repos_path.is_dir()
+
+        # count number of python source files for progress tracking
+        file_count = count_files(repos_path)
+
+        with tqdm(total=file_count) as t, open(output_path, 'w', encoding='utf-8') as ofd:
+            for root, _, files in os.walk(repos_path):
                 for pf in files:
-                    # skip files that are not python src codes
-                    if not pf.endswith('.py'):
-                        t.update()
-                        continue
+                    # all files should be python source files
+                    assert pf.endswith('.py')
 
                     pf_path = os.path.join(root, pf)
                     t.set_description(pf_path)
 
-                    # open each src file and collate all unique tokens
-                    with codecs.open(pf_path, 'r', 'utf8', errors=self.errors) as fd:
-                        src_code = fd.read().strip()
+                    # read python source file
+                    # ignore if failed to decode
+                    try:
+                        src, enc = read_source_file(pf_path)
+                    except UnicodeDecodeError:
+                        t.write(f'WARN - Unknown encoding: {pf_path}')
+                        t.update()
+                        continue
 
-                        # do not include empty files
-                        if not src_code:
-                            t.write(f'WARN - Empty file: {pf_path}')
-                            t.update()
-                            continue
-
-                        # format source code before feeding to tokenizer trainer
-                        src_code = autopep8.fix_code(src_code)
-
-                        try:
-                            tokens = tuple(self.split(src_code))
-                        except (ptokenize.TokenError, IndentationError, SyntaxError):
-                            # ignore python files that could not be tokenized
-                            # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
-                            # this way, our dataset will only contain grammatical python source files
-                            t.write(f'WARN - Malformed source file: {pf_path}')
-                        except (LookupError, UnicodeDecodeError):
-                            # some python files in the repositories use encodings other than
-                            t.write(f'WARN - Unsupported encoding: {pf_path}')
-                        else:
-                            concatenated = ' '.join(tokens)
-                            print(concatenated, file=ofd)
-                        finally:
-                            t.update()
+                    try:
+                        tokens = self.split(src, encoding=enc)
+                    except (ptokenize.TokenError, IndentationError, SyntaxError):
+                        # ignore python files that could not be tokenized
+                        # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
+                        # this way, our dataset will only contain grammatical python source files
+                        t.write(f'WARN - Malformed source file: {pf_path}')
+                    else:
+                        concatenated = ' '.join(tokens)
+                        print(concatenated, file=ofd)
+                    finally:
+                        t.update()
 
 
 class PythonTokenizer(BaseTokenizer):
-    def split(self, src: str, normalize: bool = True, byte_encode: bool = True) -> List[str]:
+    def split(
+        self,
+        src: str,
+        normalize: bool = True,
+        byte_encode: bool = True,
+        encoding: str = 'utf-8'
+    ) -> List[str]:
         tokens = []
-        src_as_bytes = BytesIO(src.encode('utf-8'))
+        src_as_bytes = BytesIO(src.encode(encoding))
 
         for token_info in ptokenize.tokenize(src_as_bytes.readline):
             token_type = token_info.exact_type
             token_value = token_info.string
-            token = f'{token_type}||{token_value}'
+            token = f'{token_type}|{token_value}'
 
             if byte_encode:
                 token = self.byte_encode(token)
@@ -182,13 +198,17 @@ class PythonTokenizer(BaseTokenizer):
 
         return tokens
 
-    def unsplit(self, tokens: List[str], byte_encoded: bool = True) -> str:
+    def unsplit(
+        self,
+        tokens: List[str],
+        byte_encoded: bool = True
+    ) -> str:
         result = []
         for token in tokens:
             if byte_encoded:
                 token = self.byte_decode(token)
 
-            token_type, token_value = token.split('||', 1)
+            token_type, token_value = token.split('|', 1)
             result.append((int(token_type), token_value))
 
         untokenized = ptokenize.untokenize(result)
@@ -197,18 +217,17 @@ class PythonTokenizer(BaseTokenizer):
 
 
 class PygmentsTokenizer(BaseTokenizer):
-    def __init__(
-        self,
-        vocab_file: Optional[str] = None,
-        errors: str = 'replace'
-    ):
-        self.lexer = Python3Lexer()
-        self.byte_encoder = bytes_to_unicode()
-        self.byte_decoder = {v: k for k, v in self.byte_encoder.items()}
-        self.bpe = yttm.BPE(model=vocab_file) if vocab_file else None
-        self.errors = errors
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.lexer = PythonLexer()
 
-    def split(self, src: str, normalize: bool = True, byte_encoded: bool = True) -> List[str]:
+    def split(
+        self,
+        src: str,
+        normalize: bool = True,
+        byte_encode: bool = True,
+        encoding: str = 'utf-8'
+    ) -> List[str]:
         tokens = [token for _, token in self.lexer.get_tokens(src)]
 
         if not normalize:
@@ -221,11 +240,15 @@ class PygmentsTokenizer(BaseTokenizer):
             elif last_src_char != last_token:
                 tokens[-1] = last_src_char
 
-        if byte_encoded:
+        if byte_encode:
             tokens = [self.byte_encode(token) for token in tokens]
 
         return tokens
 
-    def unsplit(self, tokens: List[str]) -> str:
+    def unsplit(
+        self,
+        tokens: List[str],
+        byte_encoded: bool = True
+    ) -> str:
         tokens = [self.byte_decode(token) for token in tokens]
         return ''.join(tokens)
