@@ -9,8 +9,6 @@ from pygments.lexers import PythonLexer
 from tokenizers import SentencePieceBPETokenizer
 from .utils import read_source_file
 
-import autopep8
-import chardet
 import os
 import tokenize as ptokenize
 
@@ -152,22 +150,17 @@ class BaseTokenizer(ABC):
                     pf_path = os.path.join(root, pf)
                     t.set_description(pf_path)
 
-                    # read python source file
-                    # ignore if failed to decode
                     try:
                         src, enc = read_source_file(pf_path)
-                    except UnicodeDecodeError:
-                        t.write(f'WARN - Unknown encoding: {pf_path}')
-                        t.update()
-                        continue
-
-                    try:
                         tokens = self.split(src, encoding=enc)
                     except (ptokenize.TokenError, IndentationError, SyntaxError):
                         # ignore python files that could not be tokenized
                         # as they may be used by test files e.g. (google/pytype/tokenerror1.py)
                         # this way, our dataset will only contain grammatical python source files
                         t.write(f'WARN - Malformed source file: {pf_path}')
+                    except UnicodeDecodeError:
+                        # also, ignore python files with decoding errors
+                        t.write(f'WARN - Unknown encoding: {pf_path}')
                     else:
                         concatenated = ' '.join(tokens)
                         print(concatenated, file=ofd)
