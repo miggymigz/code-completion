@@ -9,6 +9,7 @@ from pygments.lexers import PythonLexer
 from tokenizers import SentencePieceBPETokenizer
 from .utils import read_source_file
 
+import ast
 import os
 import tokenize as ptokenize
 
@@ -72,7 +73,7 @@ class BaseTokenizer(ABC):
             )
 
     @abstractmethod
-    def split(self, src: str, normalize: bool = True, byte_encode: bool = True) -> List[str]:
+    def split(self, src: str, normalize: bool = True, byte_encode: bool = True, encoding: str = 'utf-8') -> List[str]:
         """
         Splits source code (string) into tokens
         """
@@ -151,7 +152,14 @@ class BaseTokenizer(ABC):
                     t.set_description(pf_path)
 
                     try:
+                        # read source files contents (and guess encoding)
                         src, enc = read_source_file(pf_path)
+
+                        # source code with syntax errors will fail to parse
+                        # using the ast module (so we exclude them from training)
+                        ast.parse(src)
+
+                        # tokenize remaining source code
                         tokens = self.split(src, encoding=enc)
                     except (ptokenize.TokenError, IndentationError, SyntaxError):
                         # ignore python files that could not be tokenized
