@@ -31,12 +31,12 @@ def finetune(
     tokenizer.pad_token = tokenizer.eos_token
 
     # retrieve python repositories dataset
-    n_positions = model.config.n_positions
+    block_size = 2 << 7
     dataset = PythonReposDataset(
         dataset_dir=dataset_dir,
         batch_size=batch_size,
         count_fn=lambda x: len(tokenizer(x)['input_ids']),
-        max_position=n_positions,
+        block_size=block_size,
     )
 
     # initialize model's optimizer
@@ -54,8 +54,8 @@ def finetune(
         attn_mask = encoding['attention_mask']
 
         # split tensors since the model has a max length limit
-        input_ids = input_ids.transpose(0, 1).split(n_positions)
-        attn_mask = attn_mask.transpose(0, 1).split(n_positions)
+        input_ids = input_ids.transpose(0, 1).split(block_size)
+        attn_mask = attn_mask.transpose(0, 1).split(block_size)
 
         for j in range(len(input_ids)):
             _input_ids = input_ids[j].transpose(0, 1).to(device)

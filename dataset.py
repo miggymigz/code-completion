@@ -12,7 +12,7 @@ class PythonReposDataset(IterableDataset):
         dataset_dir: str = 'repositories',
         count_fn: Callable[[str], int] = None,
         batch_size: int = 8,
-        max_position: int = 1024,
+        block_size: int = 2 << 7,
     ):
         self.count_fn = count_fn
         assert count_fn is not None
@@ -21,14 +21,14 @@ class PythonReposDataset(IterableDataset):
         assert self.dataset_path.is_dir()
 
         self.batch_size = batch_size
-        self.max_position = max_position
+        self.block_size = block_size
         self.source_files = list(self.dataset_path.rglob('*.py'))
 
         # cache for storing filenames and their corresponding token counts
         self.buckets = defaultdict(list)
 
     def __iter__(self) -> str:
-        # send batches of width <= `max_position`
+        # send batches of width <= `block_size`
         batch = []
         for i in range(len(self.source_files)):
             # count tokens of the current source file
@@ -36,13 +36,13 @@ class PythonReposDataset(IterableDataset):
             count = self.count_fn(src)
 
             # append source file contents to the current batch
-            # if its token length is less than `max_position`
-            if count < self.max_position:
+            # if its token length is less than `block_size`
+            if count < self.block_size:
                 batch.append(src)
             # store count of current source file in a bucket
             # in preparation for later dispatching
             else:
-                bucket_id = math.ceil(count / self.max_position) - 1
+                bucket_id = math.ceil(count / self.block_size) - 1
                 self.buckets[bucket_id].append(i)
 
             # return batch if it is already complete
