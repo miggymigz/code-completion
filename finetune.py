@@ -1,4 +1,3 @@
-from pathlib import Path
 from torch.utils.data.dataloader import DataLoader
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, AdamW
 from tqdm import tqdm
