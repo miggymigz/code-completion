@@ -31,6 +31,11 @@ class PythonReposDataset(IterableDataset):
         # send batches of width <= `block_size`
         batch = []
         for i in range(len(self.source_files)):
+            # some directories also have a '.py' ending
+            # we need actual .py source files so we skip directories
+            if not self.source_files[i].is_file():
+                continue
+
             # count tokens of the current source file
             src = self.read_contents(i)
             count = self.count_fn(src)
