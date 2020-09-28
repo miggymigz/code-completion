@@ -1,11 +1,11 @@
-import torch
 from transformers import data
 from dataset import PythonReposDataset
 from pathlib import Path
 from transformers import GPT2LMHeadModel, GPT2TokenizerFast, AdamW
 
 import fire
-import math
+import torch
+import warnings
 
 
 def finetune(
@@ -14,12 +14,16 @@ def finetune(
     dataset_dir: str = 'repositories',
     batch_size: int = 8
 ):
+    # instantiate device to be used for training
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     # instantiate pretrained tokenizer and model
     model = GPT2LMHeadModel.from_pretrained(gpt2_variant)
     tokenizer = GPT2TokenizerFast.from_pretrained(gpt2_variant)
 
-    # set model to training mode
+    # set model to training mode and put it on device
     model.train()
+    model.to(device)
 
     # Padding tokens were not used during the pre-training of GPT and GPT-2, therefore they have none.
     # An attention mask should be specified so that the model won't attend to padded indices.
@@ -50,19 +54,20 @@ def finetune(
         attn_mask = encoding['attention_mask']
 
         # split tensors since the model has a max length limit
-        input_ids = torch.split(input_ids.transpose(0, 1), n_positions)
-        attn_mask = torch.split(attn_mask.transpose(0, 1), n_positions)
+        input_ids = input_ids.transpose(0, 1).split(n_positions)
+        attn_mask = attn_mask.transpose(0, 1).split(n_positions)
         past = None
 
         for j in range(len(input_ids)):
-            _input_ids = input_ids[j].transpose(0, 1)
-            _attn_mask = attn_mask[j].transpose(0, 1)
+            _input_ids = input_ids[j].transpose(0, 1).to(device)
+            _attn_mask = attn_mask[j].transpose(0, 1).to(device)
+            _past = past.to(device) if past is not None else None
 
             # compute loss
             loss, _, past = model(
                 _input_ids,
                 attention_mask=_attn_mask,
-                past_key_values=past,
+                past_key_values=_past,
                 labels=_input_ids,
             )
             print(f'Batch {i+1:3d}: Loss={loss}')
@@ -79,4 +84,11 @@ def finetune(
 
 
 if __name__ == '__main__':
+    # set random seed for reproducibility
+    torch.manual_seed(7)
+
+    # check for CUDA availability
+    if not torch.cuda.is_available():
+        warnings.warn("CUDA is not available. Training will be slow.")
+
     fire.Fire(finetune)
