@@ -29,7 +29,6 @@ def finetune(variant: str = 'gpt2', dataset_dir: str = 'repositories', batch_siz
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
     n_total_steps = math.ceil(len(dataset) / batch_size)
-    print('dataset len:', len(dataset), ' total steps:', n_total_steps)
     pbar = tqdm(enumerate(dataloader), total=n_total_steps)
     for i, batch in pbar:
         # encode batch into their token IDS
