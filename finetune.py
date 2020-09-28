@@ -21,9 +21,9 @@ def finetune(
     model = GPT2LMHeadModel.from_pretrained(gpt2_variant)
     tokenizer = GPT2TokenizerFast.from_pretrained(gpt2_variant)
 
-    # set model to training mode and put it on device
+    # put model on cuda device and set it to training mode
+    model.to(device).half()
     model.train()
-    model.to(device)
 
     # Padding tokens were not used during the pre-training of GPT and GPT-2, therefore they have none.
     # An attention mask should be specified so that the model won't attend to padded indices.
@@ -56,21 +56,21 @@ def finetune(
         # split tensors since the model has a max length limit
         input_ids = input_ids.transpose(0, 1).split(n_positions)
         attn_mask = attn_mask.transpose(0, 1).split(n_positions)
-        past = None
 
         for j in range(len(input_ids)):
             _input_ids = input_ids[j].transpose(0, 1).to(device)
             _attn_mask = attn_mask[j].transpose(0, 1).to(device)
-            _past = past.to(device) if past is not None else None
 
             # compute loss
-            loss, _, past = model(
+            loss, _, _ = model(
                 _input_ids,
                 attention_mask=_attn_mask,
-                past_key_values=_past,
                 labels=_input_ids,
             )
-            print(f'Batch {i+1:3d}: Loss={loss}')
+            print(f'Step {i+1}-{j+1}: Loss={loss}')
+
+            # delete input tensors to free memory in the GPU
+            del _input_ids, _attn_mask
 
             # update parameters
             optimizer.zero_grad()
