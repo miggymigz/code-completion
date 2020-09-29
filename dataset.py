@@ -1,10 +1,14 @@
 from collections import defaultdict
 from pathlib import Path
 from torch.utils.data import IterableDataset
+from transformers import GPT2TokenizerFast
 from typing import Callable, List
-from yapf.yapflib.yapf_api import FormatFile
 
+import fire
 import math
+import pickle
+
+from transformers.tokenization_t5 import T5Tokenizer
 
 
 class PythonReposDataset(IterableDataset):
@@ -14,6 +18,7 @@ class PythonReposDataset(IterableDataset):
         count_fn: Callable[[str], int] = None,
         batch_size: int = 8,
         block_size: int = 2 << 7,
+        return_str: bool = True,
     ):
         self.count_fn = count_fn
         assert count_fn is not None
@@ -23,6 +28,7 @@ class PythonReposDataset(IterableDataset):
 
         self.batch_size = batch_size
         self.block_size = block_size
+        self.return_str = return_str
         self.source_files = list(self.dataset_path.rglob('*.py'))
 
         # cache for storing filenames and their corresponding token counts
@@ -44,7 +50,8 @@ class PythonReposDataset(IterableDataset):
             # append source file contents to the current batch
             # if its token length is less than `block_size`
             if count < self.block_size:
-                batch.append(src)
+                src_path = str(self.source_files[i])
+                batch.append(src if self.return_str else src_path)
             # store count of current source file in a bucket
             # in preparation for later dispatching
             else:
@@ -63,9 +70,52 @@ class PythonReposDataset(IterableDataset):
             for i in range(n_batches):
                 batch = indices[i * self.batch_size: i *
                                 self.batch_size + self.batch_size]
-                yield [self.read_contents(j) for j in batch]
+                yield [
+                    self.read_contents(j)
+                    if self.return_str
+                    else str(self.source_files[j])
+                    for j in batch
+                ]
 
     def read_contents(self, index) -> str:
         f = self.source_files[index]
-        formattedCode, _, _ = FormatFile(f)
-        return formattedCode
+        with f.open('r', encoding='utf-8') as fd:
+            return fd.read().strip()
+
+
+def preencode(variant: str, dataset_dir: str = 'repositories', batch_size: int = 8, block_size: int = 2 << 7):
+    dataset = PythonReposDataset(
+        dataset_dir=dataset_dir,
+        count_fn=get_count_fn(variant),
+        batch_size=batch_size,
+        block_size=block_size,
+        return_str=False,
+    )
+
+    # iterate undeterminate dataset
+    # to become determinate
+    batches = []
+    for batch in dataset:
+        batches.append(batch)
+
+    # pickle batches for training use
+    path = f'_{variant}_{batch_size}_{block_size}.pkl'
+    with open(path, 'wb') as fd:
+        pickle.dump(batches, fd)
+        print(f'Dumped batches as "{path}"')
+
+
+def get_count_fn(variant: str) -> Callable[[str], int]:
+    if variant == 'gpt2':
+        tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+        return lambda src: len(tokenizer.encode(src))
+
+    if variant == 't5':
+        tokenizer = T5Tokenizer.from_pretrained('t5-base')
+        return lambda src: len(tokenizer.encode(src))
+
+    raise ValueError(f'Unknown tokenizer variant "{variant}"')
+
+
+if __name__ == '__main__':
+    fire.Fire(preencode)
