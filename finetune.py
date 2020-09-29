@@ -16,6 +16,7 @@ def finetune(
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     fp16: bool = True,
+    steps_per_checkpoint: int = 10,
 ):
     # instantiate device to be used for training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -27,6 +28,7 @@ def finetune(
         'dataset_dir': dataset_dir,
         'batch_size': batch_size,
         'use_fp16': fp16,
+        'steps_per_checkpoint': steps_per_checkpoint,
     }
 
     # finetune GPT-2 and T5
@@ -41,6 +43,7 @@ def finetune_t5(
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     use_fp16: bool = True,
+    steps_per_checkpoint: int = 10,
 ):
     # instantiate pretrained tokenizer and model
     model = T5ForConditionalGeneration.from_pretrained(variant)
@@ -65,16 +68,21 @@ def finetune_t5(
         block_size=block_size,
     )
 
-    # initialize model's optimizer
+    # initialize model's optimizer and ckpt path
     optimizer = AdamW(model.parameters(), lr=1e-5)
+    ckpt_path = Path(checkpoint_dir) / 't5-finetuned'
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
     for i, batch in enumerate(dataset):
-        # encode batch into their token IDS
-        input_ids = tokenizer.encode(batch, return_tensors='pt', padding=True)
+        # skip batches with a width of less than 2
+        # since we shift the positions of the tokens for their labels
+        if batch.shape[1] < 2:
+            continue
 
+        # encode batch into their token IDS
         # split tensors since the model has a max length limit
+        input_ids = tokenizer.encode(batch, return_tensors='pt', padding=True)
         input_ids = input_ids.transpose(0, 1).split(block_size)
 
         for j in range(len(input_ids)):
@@ -92,8 +100,11 @@ def finetune_t5(
             loss.backward()
             optimizer.step()
 
-    # save finetuned weights
-    ckpt_path = Path(checkpoint_dir) / 't5-finetuned'
+        # save weights every `steps_per_checkpoint`
+        if (i + 1) % steps_per_checkpoint == 0:
+            model.save_pretrained(ckpt_path)
+
+    # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
     print(f'Model checkpoints saved at: {ckpt_path}')
 
@@ -105,6 +116,7 @@ def finetune_gpt2(
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     use_fp16: bool = True,
+    steps_per_checkpoint: int = 10,
 ):
     # instantiate pretrained tokenizer and model
     model = GPT2LMHeadModel.from_pretrained(variant)
@@ -134,12 +146,18 @@ def finetune_gpt2(
         block_size=block_size,
     )
 
-    # initialize model's optimizer
+    # initialize model's optimizer and ckpt path
     optimizer = AdamW(model.parameters(), lr=1e-5)
+    ckpt_path = Path(checkpoint_dir) / 'gpt2-finetuned'
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
     for i, batch in enumerate(dataset):
+        # skip batches with a width of less than 2
+        # since we shift the positions of the tokens for their labels
+        if batch.shape[1] < 2:
+            continue
+
         # encode batch into their token IDS
         encoding = tokenizer(batch, return_tensors='pt', padding=True)
         input_ids = encoding['input_ids']
@@ -169,8 +187,11 @@ def finetune_gpt2(
             loss.backward()
             optimizer.step()
 
-    # save finetuned weights
-    ckpt_path = Path(checkpoint_dir) / 'gpt2-finetuned'
+        # save weights every `steps_per_checkpoint`
+        if (i + 1) % steps_per_checkpoint == 0:
+            model.save_pretrained(ckpt_path)
+
+    # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
     print(f'Model checkpoints saved at: {ckpt_path}')
 
