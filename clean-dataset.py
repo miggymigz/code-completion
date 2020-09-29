@@ -19,6 +19,10 @@ def clean_dataset(dataset_dir: str = 'repositories'):
     for f in pbar:
         pbar.set_description(str(f))
 
+        # skip directories that are named with suffix ".py"
+        if not f.is_file():
+            continue
+
         # read file contents into memory
         with f.open('r', encoding='utf-8') as fd:
             try:
