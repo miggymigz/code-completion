@@ -33,7 +33,7 @@ def finetune(
 
     # finetune GPT-2 and T5
     finetune_gpt2(variant='gpt2', **kwargs)
-    finetune_t5(variant='t5', **kwargs)
+    finetune_t5(variant='t5-base', **kwargs)
 
 
 def finetune_t5(
@@ -46,7 +46,8 @@ def finetune_t5(
     steps_per_checkpoint: int = 10,
 ):
     # instantiate pretrained tokenizer and model
-    model = T5ForConditionalGeneration.from_pretrained(variant)
+    model = T5ForConditionalGeneration.from_pretrained(
+        variant, return_dict=True)
     tokenizer = T5Tokenizer.from_pretrained(variant)
 
     # put model on cuda device and set it to training mode
@@ -75,21 +76,24 @@ def finetune_t5(
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
     for i, batch in enumerate(dataset):
-        # skip batches with a width of less than 2
-        # since we shift the positions of the tokens for their labels
-        if batch.shape[1] < 2:
-            continue
-
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
         input_ids = tokenizer.encode(batch, return_tensors='pt', padding=True)
         input_ids = input_ids.transpose(0, 1).split(block_size)
 
         for j in range(len(input_ids)):
-            _input_ids = input_ids[j].transpose(0, 1).to(device)
+            _input_ids = input_ids[j].transpose(0, 1)
+
+            # skip batches with a width of less than 2
+            # since we shift the positions of the tokens for their labels
+            if _input_ids.shape[1] < 2:
+                continue
+
+            # move input tensor to GPU
+            _input_ids = _input_ids.to(device)
 
             # compute loss
-            loss, _, _ = model(input_ids=_input_ids, labels=_input_ids)
+            loss = model(input_ids=_input_ids, labels=_input_ids).loss
             print(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
@@ -119,7 +123,7 @@ def finetune_gpt2(
     steps_per_checkpoint: int = 10,
 ):
     # instantiate pretrained tokenizer and model
-    model = GPT2LMHeadModel.from_pretrained(variant)
+    model = GPT2LMHeadModel.from_pretrained(variant, return_dict=True)
     tokenizer = GPT2TokenizerFast.from_pretrained(variant)
 
     # put model on cuda device and set it to training mode
@@ -153,11 +157,6 @@ def finetune_gpt2(
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
     for i, batch in enumerate(dataset):
-        # skip batches with a width of less than 2
-        # since we shift the positions of the tokens for their labels
-        if batch.shape[1] < 2:
-            continue
-
         # encode batch into their token IDS
         encoding = tokenizer(batch, return_tensors='pt', padding=True)
         input_ids = encoding['input_ids']
@@ -168,15 +167,21 @@ def finetune_gpt2(
         attn_mask = attn_mask.transpose(0, 1).split(block_size)
 
         for j in range(len(input_ids)):
-            _input_ids = input_ids[j].transpose(0, 1).to(device)
-            _attn_mask = attn_mask[j].transpose(0, 1).to(device)
+            _input_ids = input_ids[j].transpose(0, 1)
+            _attn_mask = attn_mask[j].transpose(0, 1)
+
+            # skip batches with a width of less than 2
+            # since we shift the positions of the tokens for their labels
+            if _input_ids.shape[1] < 2:
+                continue
+
+            # move input tensors to GPU
+            _input_ids = _input_ids.to(device)
+            _attn_mask = _attn_mask.to(device)
 
             # compute loss
-            loss, _, _ = model(
-                _input_ids,
-                attention_mask=_attn_mask,
-                labels=_input_ids,
-            )
+            loss = model(_input_ids, attention_mask=_attn_mask,
+                         labels=_input_ids).loss
             print(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
