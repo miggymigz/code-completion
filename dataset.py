@@ -1,7 +1,8 @@
 from collections import defaultdict
 from pathlib import Path
 from torch.utils.data import IterableDataset
-from typing import Callable
+from typing import Callable, List
+from yapf.yapflib.yapf_api import FormatFile
 
 import math
 
@@ -27,7 +28,7 @@ class PythonReposDataset(IterableDataset):
         # cache for storing filenames and their corresponding token counts
         self.buckets = defaultdict(list)
 
-    def __iter__(self) -> str:
+    def __iter__(self) -> List[str]:
         # send batches of width <= `block_size`
         batch = []
         for i in range(len(self.source_files)):
@@ -66,5 +67,5 @@ class PythonReposDataset(IterableDataset):
 
     def read_contents(self, index) -> str:
         f = self.source_files[index]
-        with f.open('r', encoding='utf-8') as fd:
-            return fd.read().strip()
+        formattedCode, _, _ = FormatFile(f)
+        return formattedCode
