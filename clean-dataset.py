@@ -1,8 +1,10 @@
 from pathlib import Path
 from tqdm import tqdm
+from yapf.yapflib.yapf_api import FormatFile
 
 import ast
 import fire
+import lib2to3
 
 
 def clean_dataset(dataset_dir: str = 'repositories'):
@@ -29,7 +31,8 @@ def clean_dataset(dataset_dir: str = 'repositories'):
                 src = fd.read().strip()
                 raise_error_if_empty(src)
                 ast.parse(src)
-            except (UnicodeDecodeError, ValueError, SyntaxError) as e:
+                FormatFile(str(f))
+            except (UnicodeDecodeError, ValueError, SyntaxError, lib2to3.pgen2.parse.ParseError) as e:
                 pbar.write(f'{type(e).__name__}: {f}')
                 f.unlink()
 
