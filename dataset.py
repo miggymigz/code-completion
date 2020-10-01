@@ -1,14 +1,12 @@
 from collections import defaultdict
 from pathlib import Path
-from torch.utils.data import IterableDataset
-from transformers import GPT2TokenizerFast
+from torch.utils.data import IterableDataset, Dataset
+from transformers import GPT2TokenizerFast, T5Tokenizer
 from typing import Callable, List
 
 import fire
 import math
 import pickle
-
-from transformers.tokenization_t5 import T5Tokenizer
 
 
 class PythonReposDataset(IterableDataset):
@@ -21,17 +19,15 @@ class PythonReposDataset(IterableDataset):
         return_str: bool = True,
     ):
         self.count_fn = count_fn
-        assert count_fn is not None
-
         self.dataset_path = Path(dataset_dir)
-        assert self.dataset_path.is_dir()
-
         self.batch_size = batch_size
         self.block_size = block_size
         self.return_str = return_str
-        self.source_files = list(self.dataset_path.rglob('*.py'))
 
-        # cache for storing filenames and their corresponding token counts
+        assert count_fn is not None
+        assert self.dataset_path.is_dir()
+
+        self.source_files = list(self.dataset_path.rglob('*.py'))
         self.buckets = defaultdict(list)
 
     def __iter__(self) -> List[str]:
@@ -77,9 +73,26 @@ class PythonReposDataset(IterableDataset):
                     for j in batch
                 ]
 
-    def read_contents(self, index) -> str:
-        f = self.source_files[index]
-        with f.open('r', encoding='utf-8') as fd:
+    def read_contents(self, index: int) -> str:
+        path = self.source_files[index]
+        with path.open('r', encoding='utf-8') as fd:
+            return fd.read().strip()
+
+
+class PythonReposCachedDataset(Dataset):
+    def __init__(self, cache: str):
+        with open(cache, 'rb') as fd:
+            self.batches = pickle.load(fd)
+
+    def __len__(self):
+        return len(self.batches)
+
+    def __getitem__(self, index):
+        batch = self.batches[index]
+        return [self.read_contents(path) for path in batch]
+
+    def read_contents(self, path: str) -> str:
+        with open(path, 'r', encoding='utf-8') as fd:
             return fd.read().strip()
 
 
