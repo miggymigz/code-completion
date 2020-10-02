@@ -1,5 +1,6 @@
-from dataset import PythonReposDataset
+from dataset import PythonReposCachedDataset, preencode
 from pathlib import Path
+from tqdm import tqdm
 from transformers import (
     GPT2LMHeadModel, GPT2TokenizerFast,
     T5ForConditionalGeneration, T5Tokenizer,
@@ -15,6 +16,7 @@ def finetune(
     checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
+    block_size: int = 2 << 7,
     fp16: bool = True,
     steps_per_checkpoint: int = 10,
 ):
@@ -27,6 +29,7 @@ def finetune(
         'checkpoint_dir': checkpoint_dir,
         'dataset_dir': dataset_dir,
         'batch_size': batch_size,
+        'block_size': block_size,
         'use_fp16': fp16,
         'steps_per_checkpoint': steps_per_checkpoint,
     }
@@ -42,9 +45,17 @@ def finetune_t5(
     checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
+    block_size: int = 2 << 7,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
 ):
+    # preencode dataset for this model, batch size, and block size
+    cache_file = Path(f'_t5_{batch_size}_{block_size}.pkl')
+    if not cache_file.is_file():
+        print(f'Cache file "{cache_file.name}" does not exist.')
+        preencode('t5', dataset_dir=dataset_dir,
+                  batch_size=batch_size, block_size=block_size)
+
     # instantiate pretrained tokenizer and model
     model = T5ForConditionalGeneration.from_pretrained(
         variant, return_dict=True)
@@ -57,17 +68,11 @@ def finetune_t5(
     # use half-precision format during training
     # which leads to shorter training time and lower memory requirements
     # also enabling larger batch sizes
-    if use_fp16:
+    if torch.cuda.is_available() and use_fp16:
         model.half()
 
     # retrieve python repositories dataset
-    block_size = 2 << 7
-    dataset = PythonReposDataset(
-        dataset_dir=dataset_dir,
-        batch_size=batch_size,
-        count_fn=lambda x: len(tokenizer(x)['input_ids']),
-        block_size=block_size,
-    )
+    dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer and ckpt path
     optimizer = AdamW(model.parameters(), lr=1e-5)
@@ -75,7 +80,7 @@ def finetune_t5(
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    for i, batch in enumerate(dataset):
+    for i, batch in tqdm(enumerate(dataset)):
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
         input_ids = tokenizer.encode(batch, return_tensors='pt', padding=True)
@@ -119,9 +124,17 @@ def finetune_gpt2(
     checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
+    block_size: int = 2 << 7,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
 ):
+    # preencode dataset for this model, batch size, and block size
+    cache_file = Path(f'_gpt2_{batch_size}_{block_size}.pkl')
+    if not cache_file.is_file():
+        print(f'Cache file "{cache_file.name}" does not exist.')
+        preencode('gpt2', dataset_dir=dataset_dir,
+                  batch_size=batch_size, block_size=block_size)
+
     # instantiate pretrained tokenizer and model
     model = GPT2LMHeadModel.from_pretrained(variant, return_dict=True)
     tokenizer = GPT2TokenizerFast.from_pretrained(variant)
@@ -133,7 +146,7 @@ def finetune_gpt2(
     # use half-precision format during training
     # which leads to shorter training time and lower memory requirements
     # also enabling larger batch sizes
-    if use_fp16:
+    if torch.cuda.is_available() and use_fp16:
         model.half()
 
     # Padding tokens were not used during the pre-training of GPT and GPT-2, therefore they have none.
@@ -142,13 +155,7 @@ def finetune_gpt2(
     tokenizer.pad_token = tokenizer.eos_token
 
     # retrieve python repositories dataset
-    block_size = 2 << 7
-    dataset = PythonReposDataset(
-        dataset_dir=dataset_dir,
-        batch_size=batch_size,
-        count_fn=lambda x: len(tokenizer(x)['input_ids']),
-        block_size=block_size,
-    )
+    dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer and ckpt path
     optimizer = AdamW(model.parameters(), lr=1e-5)
@@ -156,7 +163,7 @@ def finetune_gpt2(
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    for i, batch in enumerate(dataset):
+    for i, batch in tqdm(enumerate(dataset)):
         # encode batch into their token IDS
         encoding = tokenizer(batch, return_tensors='pt', padding=True)
         input_ids = encoding['input_ids']

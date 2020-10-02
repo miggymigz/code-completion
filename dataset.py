@@ -2,7 +2,7 @@ from collections import defaultdict
 from pathlib import Path
 from torch.utils.data import IterableDataset, Dataset
 from transformers import GPT2TokenizerFast, T5Tokenizer
-from typing import Callable, List
+from typing import Callable, List, Union
 
 import fire
 import math
@@ -80,7 +80,7 @@ class PythonReposDataset(IterableDataset):
 
 
 class PythonReposCachedDataset(Dataset):
-    def __init__(self, cache: str):
+    def __init__(self, cache: Union[str, Path]):
         with open(cache, 'rb') as fd:
             self.batches = pickle.load(fd)
 
