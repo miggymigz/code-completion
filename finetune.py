@@ -80,7 +80,8 @@ def finetune_t5(
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    for i, batch in tqdm(enumerate(dataset)):
+    pbar = tqdm(dataset)
+    for i, batch in enumerate(pbar):
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
         input_ids = tokenizer.encode(batch, return_tensors='pt', padding=True)
@@ -99,7 +100,7 @@ def finetune_t5(
 
             # compute loss
             loss = model(input_ids=_input_ids, labels=_input_ids).loss
-            print(f'Step {i+1}-{j+1}: Loss={loss}')
+            pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
             del _input_ids
@@ -163,7 +164,8 @@ def finetune_gpt2(
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    for i, batch in tqdm(enumerate(dataset)):
+    pbar = tqdm(dataset)
+    for i, batch in enumerate(pbar):
         # encode batch into their token IDS
         encoding = tokenizer(batch, return_tensors='pt', padding=True)
         input_ids = encoding['input_ids']
@@ -189,7 +191,7 @@ def finetune_gpt2(
             # compute loss
             loss = model(_input_ids, attention_mask=_attn_mask,
                          labels=_input_ids).loss
-            print(f'Step {i+1}-{j+1}: Loss={loss}')
+            pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
             del _input_ids, _attn_mask
