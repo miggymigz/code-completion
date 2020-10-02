@@ -16,7 +16,7 @@ class PythonReposDataset(IterableDataset):
         count_fn: Callable[[str], int] = None,
         batch_size: int = 8,
         block_size: int = 2 << 7,
-        return_str: bool = True,
+        return_str: bool = False,
     ):
         self.count_fn = count_fn
         self.dataset_path = Path(dataset_dir)
