@@ -25,8 +25,11 @@ def beam_step(
         assert len(sequences) == len(probs)
 
     with torch.no_grad():
-        # print(sequences)
-        inputs = tokenizer(sequences, return_tensors='pt')
+        # for sequences of different lengths, we may need to add padding
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        inputs = tokenizer(sequences, return_tensors='pt', padding=True)
         logits = model(**inputs).logits
         log_probs = torch.nn.LogSoftmax(dim=-1)(logits[:, -1, :])
 
@@ -65,13 +68,19 @@ def beam_step(
     return new_sequences, new_probs
 
 
-def divide(sequences: List[str], probs: List[int]):
+def divide(sequences: List[str], probs: List[int], n_steps, max_steps):
     finished_sequences = []
     finished_probs = []
     unfinished_sequences = []
     unfinished_probs = []
 
     for i, s in enumerate(sequences):
+        # return sequences as they are if iter limit is reached
+        if n_steps == max_steps:
+            finished_sequences.append(s)
+            finished_probs.append(probs[i])
+            continue
+
         if s.endswith(ENDING_TOKENS):
             finished_sequences.append(s)
             finished_probs.append(probs[i])
@@ -82,12 +91,13 @@ def divide(sequences: List[str], probs: List[int]):
     return finished_sequences, finished_probs, unfinished_sequences, unfinished_probs
 
 
-def sample(
+def sampleGPT2(
     *,
     model: GPT2LMHeadModel,
     tokenizer: GPT2TokenizerFast,
     sequence: str,
     beam_width: int = 5,
+    max_steps: int = 10,
 ):
     # do one step of beam search to get `beam_width` sequences
     sequences, probs = beam_step(
@@ -96,10 +106,12 @@ def sample(
         sequences=[sequence],
         k=beam_width
     )
-    fs, fp, sequences, probs = divide(sequences, probs)
+    fs, fp, sequences, probs = divide(sequences, probs, 1, max_steps)
 
     # we stop generating if one of the sequences
     # already contain an ending token (e.g. '\n')
+    # or we got to the maximum number of steps
+    n_steps = 1
     while sequences:
         sequences, probs = beam_step(
             model=model,
@@ -108,11 +120,13 @@ def sample(
             probs=probs,
             k=beam_width,
         )
-        _fs, _fp, sequences, probs = divide(sequences, probs)
+        _fs, _fp, sequences, probs = divide(
+            sequences, probs, n_steps, max_steps)
 
         # accumulate finished sequences and probs
         fs.extend(_fs)
         fp.extend(_fp)
+        n_steps += 1
 
     # the accumulated probabilities are log probabilities
     # we convert them back into normal probabilities for easier interpretation

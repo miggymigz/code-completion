@@ -1,35 +1,25 @@
-from pathlib import Path
 from transformers import T5TokenizerFast, T5ForConditionalGeneration
 
-import fire
 
-# initialize model and tokenizer
-t5 = T5ForConditionalGeneration.from_pretrained('t5-base')
-tokenizer = T5TokenizerFast.from_pretrained('t5-base')
-
-
-def sample(inputfile: str = 'input.txt'):
-    # verify input file's existence
-    inputpath = Path(inputfile).expanduser()
-    if not inputpath.is_file():
-        raise FileNotFoundError('Input file not found')
-
-    # read input file source code
-    with open(inputpath, 'r', encoding='utf-8') as fd:
-        src = fd.read()
-
+def sampleT5(
+    *,
+    model: T5ForConditionalGeneration,
+    tokenizer: T5TokenizerFast,
+    sequence: str,
+    beam_width: int = 5,
+):
     # blanks should be written by 4 underscores
-    if '____' not in src:
+    if '____' not in sequence:
         raise ValueError('src should contain a blank (e.g. ____)')
 
     # replace blank by a sentinel token
-    src = src.replace('____', '<extra_id_0>')
+    src = sequence.replace('____', '<extra_id_0>')
 
     # initialize model inputs and get outputs
     input_ids = tokenizer(src, add_special_tokens=True,
                           return_tensors='pt').input_ids
-    outputs = t5.generate(input_ids, num_beams=100,
-                          num_return_sequences=10, max_length=10)
+    outputs = model.generate(input_ids, num_beams=beam_width,
+                             num_return_sequences=beam_width, max_length=10)
 
     # decode outputs
     blank_index = src.index('<extra_id_0>')
@@ -44,8 +34,4 @@ def sample(inputfile: str = 'input.txt'):
 
         return src_prefix + space + _txt + src_suffix
 
-    print(list(map(filter, outputs)))
-
-
-if __name__ == '__main__':
-    fire.Fire(sample)
+    return list(map(filter, outputs))
