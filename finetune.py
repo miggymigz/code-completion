@@ -14,6 +14,8 @@ import warnings
 
 
 def finetune(
+    t5: bool = False,
+    gpt2: bool = False,
     checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
@@ -35,9 +37,13 @@ def finetune(
         'steps_per_checkpoint': steps_per_checkpoint,
     }
 
-    # finetune GPT-2 and T5
-    finetune_gpt2(variant='gpt2', **kwargs)
-    finetune_t5(variant='t5-base', **kwargs)
+    # finetune GPT-2
+    if gpt2:
+        finetune_gpt2(variant='gpt2', **kwargs)
+
+    # finetune T5
+    if t5:
+        finetune_t5(variant='t5-base', **kwargs)
 
 
 def finetune_t5(
