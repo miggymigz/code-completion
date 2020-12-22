@@ -12,11 +12,16 @@ import random
 import torch
 import warnings
 
+# Available GPT-2 and T5 variants
+# GPT2: gpt2, gpt2-medium, gpt2-large, gpt2-xl, distilgpt2
+# T5: t5-small, t5-base, t5-large, t5-3b, t5-11b
+
 
 def finetune(
     t5: bool = False,
     gpt2: bool = False,
-    checkpoint_dir: str = 'checkpoints',
+    t5variant: str = 't5-large',
+    gpt2variant: str = 'gpt2-large',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     block_size: int = 2 << 8,
@@ -29,7 +34,6 @@ def finetune(
     # pack common keyword arguments
     kwargs = {
         'device': device,
-        'checkpoint_dir': checkpoint_dir,
         'dataset_dir': dataset_dir,
         'batch_size': batch_size,
         'block_size': block_size,
@@ -37,25 +41,25 @@ def finetune(
         'steps_per_checkpoint': steps_per_checkpoint,
     }
 
-    # finetune GPT-2
     if gpt2:
-        finetune_gpt2(variant='gpt2', **kwargs)
+        print('Finetuning GPT-2...')
+        finetune_gpt2(variant=gpt2variant, **kwargs)
 
-    # finetune T5
     if t5:
-        finetune_t5(variant='t5-base', **kwargs)
+        print('Finetuning T5...')
+        finetune_t5(variant=t5variant, **kwargs)
 
 
 def finetune_t5(
     variant: str = 't5-base',
     learning_rate: float = 0.001,
     device: torch.device = 'cpu',
-    checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     block_size: int = 2 << 8,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    ckpt_path: str = 't5-finetuned',
 ):
     # preencode dataset for this model, batch size, and block size
     cache_file = Path(f'_t5_{batch_size}_{block_size}.pkl')
@@ -81,9 +85,8 @@ def finetune_t5(
     # retrieve python repositories dataset
     dataset = PythonReposCachedDataset(cache_file)
 
-    # initialize model's optimizer and ckpt path
+    # initialize model's optimizer
     optimizer = Adafactor(model.parameters(), lr=learning_rate)
-    ckpt_path = Path(checkpoint_dir) / 't5-finetuned'
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
@@ -129,18 +132,18 @@ def finetune_t5(
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
-    print(f'Model checkpoints saved at: {ckpt_path}')
+    print('Finished finetuning T5')
 
 
 def finetune_gpt2(
     variant: str = 'gpt2',
     device: torch.device = 'cpu',
-    checkpoint_dir: str = 'checkpoints',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
     block_size: int = 2 << 8,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    ckpt_path: str = 't5-finetuned',
 ):
     # preencode dataset for this model, batch size, and block size
     cache_file = Path(f'_gpt2_{batch_size}_{block_size}.pkl')
@@ -171,9 +174,8 @@ def finetune_gpt2(
     # retrieve python repositories dataset
     dataset = PythonReposCachedDataset(cache_file)
 
-    # initialize model's optimizer and ckpt path
+    # initialize model's optimizer
     optimizer = AdamW(model.parameters(), lr=1e-5)
-    ckpt_path = Path(checkpoint_dir) / 'gpt2-finetuned'
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
@@ -217,7 +219,7 @@ def finetune_gpt2(
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
-    print(f'Model checkpoints saved at: {ckpt_path}')
+    print('Finished finetuning GPT-2')
 
 
 def generate_samples(input_ids, dprob=0.15, sentinel_first_id=32099, eos_token_id=1, pad=True, pad_token_id=0):
