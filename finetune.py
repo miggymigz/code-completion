@@ -143,7 +143,7 @@ def finetune_gpt2(
     block_size: int = 2 << 8,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
-    ckpt_path: str = 't5-finetuned',
+    ckpt_path: str = 'gpt2-finetuned',
 ):
     # preencode dataset for this model, batch size, and block size
     cache_file = Path(f'_gpt2_{batch_size}_{block_size}.pkl')
