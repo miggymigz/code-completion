@@ -245,7 +245,7 @@ def finetune_gpt2(
 
         # save weights every `steps_per_checkpoint`
         if (i + 1) % steps_per_checkpoint == 0:
-            model.save_pretrained(ckpt_path)
+            model.save_pretrained(f'{ckpt_path}-i')
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
