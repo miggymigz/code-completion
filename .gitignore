@@ -12,6 +12,8 @@ dataset.npz
 _pygments_aux
 _python_aux
 input.txt
+*.gz
+*.pkl
 
 # python wheel stuff
 dependency_links.txt

@@ -42,11 +42,11 @@ def finetune(
     }
 
     if gpt2:
-        print('Finetuning GPT-2...')
+        print(f'Finetuning GPT-2 (variant={gpt2variant})...')
         finetune_gpt2(variant=gpt2variant, **kwargs)
 
     if t5:
-        print('Finetuning T5...')
+        print(f'Finetuning T5 (variant={t5variant})...')
         finetune_t5(variant=t5variant, **kwargs)
 
 
@@ -86,7 +86,11 @@ def finetune_t5(
     dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer
-    optimizer = Adafactor(model.parameters(), lr=learning_rate)
+    optimizer = Adafactor(
+        model.parameters(),
+        lr=learning_rate,
+        relative_step=False
+    )
 
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
@@ -94,8 +98,11 @@ def finetune_t5(
     for i, batch in enumerate(pbar):
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
-        input_ids = tokenizer(batch, return_tensors='pt', padding=True)
-        input_ids = input_ids.split(block_size, dim=1)
+        input_ids = tokenizer(
+            batch,
+            return_tensors='pt',
+            padding=True,
+        ).input_ids.split(block_size, dim=1)
 
         for j, _input_ids in enumerate(input_ids):
             # convert tensor into a python list to generate labels for t5 finetuning
@@ -211,8 +218,21 @@ def finetune_gpt2(
             _attn_mask = _attn_mask.to(device)
 
             # compute loss
-            loss = model(_input_ids, attention_mask=_attn_mask,
-                         labels=_input_ids).loss
+            loss = model(
+                _input_ids,
+                attention_mask=_attn_mask,
+                labels=_input_ids
+            ).loss
+
+            # if loss turns out to be nan, then there's something wrong
+            # with the inputs that was fed into the model so training should not continue
+            if torch.isnan(loss):
+                model.save_pretrained(f'{ckpt_path}-stopped-by-nan')
+                pbar.write('Input batch that lead to nan loss:')
+                pbar.write(str(batch))
+                return
+
+            # Write loss and continue training
             pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
