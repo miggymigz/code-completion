@@ -7,6 +7,7 @@ from typing import Callable, List, Union
 import fire
 import math
 import pickle
+import os
 
 
 class PythonReposDataset(IterableDataset):
@@ -88,8 +89,9 @@ class PythonReposCachedDataset(Dataset):
         return len(self.batches)
 
     def __getitem__(self, index):
+        # some files may have been removed after unzipping (very rare)
         batch = self.batches[index]
-        return [self.read_contents(path) for path in batch]
+        return [self.read_contents(path) for path in batch if os.path.isfile(path)]
 
     def read_contents(self, path: str) -> str:
         with open(path, 'r', encoding='utf-8') as fd:

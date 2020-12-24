@@ -116,6 +116,16 @@ def finetune_t5(
                 labels=_labels,
                 decoder_attention_mask=_labels_mask,
             ).loss
+
+            # if loss turns out to be nan, then there's something wrong
+            # with the inputs that was fed into the model so training should not continue
+            if torch.isnan(loss):
+                model.save_pretrained(f'{ckpt_path}-stopped-by-nan')
+                pbar.write('Input batch that lead to nan loss:')
+                pbar.write(str(batch))
+                return
+
+            # Write loss and continue training
             pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
@@ -128,7 +138,7 @@ def finetune_t5(
 
         # save weights every `steps_per_checkpoint`
         if (i + 1) % steps_per_checkpoint == 0:
-            model.save_pretrained(ckpt_path)
+            model.save_pretrained(f'{ckpt_path}-i')
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
