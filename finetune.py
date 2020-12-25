@@ -27,6 +27,7 @@ def finetune(
     block_size: int = 2 << 8,
     fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    max_steps: int = 1e+15,
 ):
     # instantiate device to be used for training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -39,6 +40,7 @@ def finetune(
         'block_size': block_size,
         'use_fp16': fp16,
         'steps_per_checkpoint': steps_per_checkpoint,
+        'max_steps': max_steps,
     }
 
     if gpt2:
@@ -59,6 +61,7 @@ def finetune_t5(
     block_size: int = 2 << 8,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    max_steps: int = 1e+15,
     ckpt_path: str = 't5-finetuned',
 ):
     # preencode dataset for this model, batch size, and block size
@@ -83,7 +86,7 @@ def finetune_t5(
         model.half()
 
     # retrieve python repositories dataset
-    dataset = PythonReposCachedDataset(cache_file)
+    dataset = PythonReposCachedDataset(cache_file, max_steps=max_steps)
 
     # initialize model's optimizer
     optimizer = Adafactor(
@@ -160,6 +163,7 @@ def finetune_gpt2(
     block_size: int = 2 << 8,
     use_fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    max_steps: int = 1e+15,
     ckpt_path: str = 'gpt2-finetuned',
 ):
     # preencode dataset for this model, batch size, and block size
@@ -189,7 +193,7 @@ def finetune_gpt2(
     tokenizer.pad_token = tokenizer.eos_token
 
     # retrieve python repositories dataset
-    dataset = PythonReposCachedDataset(cache_file)
+    dataset = PythonReposCachedDataset(cache_file, max_steps)
 
     # initialize model's optimizer
     optimizer = AdamW(model.parameters(), lr=1e-5)

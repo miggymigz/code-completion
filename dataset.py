@@ -92,12 +92,13 @@ class PythonReposDataset(IterableDataset):
 
 
 class PythonReposCachedDataset(Dataset):
-    def __init__(self, cache: Union[str, Path]):
+    def __init__(self, cache: Union[str, Path], max_steps: int = 1e+15):
+        self.max_steps = max_steps
         with open(cache, 'rb') as fd:
             self.batches = pickle.load(fd)
 
     def __len__(self):
-        return len(self.batches)
+        return min(self.max_steps, len(self.batches))
 
     def __getitem__(self, index):
         # some files may have been removed after unzipping (very rare)
