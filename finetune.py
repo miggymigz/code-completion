@@ -136,7 +136,7 @@ def finetune_t5(
             pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
-            del _input_ids
+            del _input_ids, _input_ids_mask, _labels, _labels_mask
 
             # update parameters
             optimizer.zero_grad()

@@ -40,8 +40,14 @@ class PythonReposDataset(IterableDataset):
             if not self.source_files[i].is_file():
                 continue
 
+            # read contents of the file
+            src = self.read_contents(i).strip()
+
+            # we don't include empty python source files
+            if not src:
+                continue
+
             # count tokens of the current source file
-            src = self.read_contents(i)
             count = self.count_fn(src)
 
             # append source file contents to the current batch
@@ -90,10 +96,28 @@ class PythonReposCachedDataset(Dataset):
 
     def __getitem__(self, index):
         # some files may have been removed after unzipping (very rare)
+        # don't include empty files
         batch = self.batches[index]
-        return [self.read_contents(path) for path in batch if os.path.isfile(path)]
+        results = []
 
-    def read_contents(self, path: str) -> str:
+        for path in batch:
+            if not os.path.isfile(path):
+                continue
+
+            contents = self.read_contents(path).strip()
+            if not contents:
+                continue
+
+            results.append(contents)
+
+        # every batch should contain atleast one item
+        if not results:
+            raise AssertionError(
+                f"Batch {batch} doesn't contain any items.")
+
+        return results
+
+    def read_contents(_, path: str) -> str:
         with open(path, 'r', encoding='utf-8') as fd:
             return fd.read().strip()
 
