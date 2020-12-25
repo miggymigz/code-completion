@@ -47,8 +47,13 @@ class PythonReposDataset(IterableDataset):
             if not src:
                 continue
 
-            # count tokens of the current source file
-            count = self.count_fn(src)
+            try:
+                # count tokens of the current source file
+                count = self.count_fn(src)
+            except ValueError:
+                # is raised if the tokens contain unknown tokens
+                # it's better to skip source files with unknown tokens
+                continue
 
             # append source file contents to the current batch
             # if its token length is less than `block_size`
@@ -147,13 +152,23 @@ def preencode(variant: str, dataset_dir: str = 'repositories', batch_size: int =
 def get_count_fn(variant: str) -> Callable[[str], int]:
     if variant == 'gpt2':
         tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
-        return lambda src: len(tokenizer.encode(src))
+        return create_count_fn(tokenizer)
 
     if variant == 't5':
         tokenizer = T5Tokenizer.from_pretrained('t5-base')
-        return lambda src: len(tokenizer.encode(src))
+        return create_count_fn(tokenizer)
 
-    raise ValueError(f'Unknown tokenizer variant "{variant}"')
+    raise AssertionError(f'Unknown tokenizer variant "{variant}"')
+
+
+def create_count_fn(tokenizer):
+    def count_fn(src):
+        tokens = tokenizer.encode(src)
+        if tokenizer.unk_token_id in tokens:
+            raise ValueError(f'src file contains unknown tokens')
+        return len(tokens)
+
+    return count_fn
 
 
 if __name__ == '__main__':
