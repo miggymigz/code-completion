@@ -11,6 +11,7 @@ checkpoints
 dataset.npz
 _pygments_aux
 _python_aux
+_clean_dataset_aux
 input.txt
 *.gz
 *.pkl
