@@ -9,6 +9,7 @@ import lib2to3
 
 def clean_dataset(
     dataset_dir: str = 'repositories',
+    skip_format: bool = False,
     max_file_size: int = 1 << 20,
     aux_fname: str = '_clean_dataset_aux',
 ):
@@ -53,7 +54,9 @@ def clean_dataset(
                 src = fd.read().strip()
                 raise_error_if_empty(src)
                 ast.parse(src)
-                FormatFile(str(f))
+
+                if not skip_format:
+                    FormatFile(str(f))
             except (UnicodeDecodeError, ValueError, SyntaxError, lib2to3.pgen2.parse.ParseError) as e:
                 pbar.write(f'{type(e).__name__}: {f}')
                 f.unlink()
