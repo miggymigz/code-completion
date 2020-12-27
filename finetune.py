@@ -2,7 +2,7 @@ from dataset import PythonReposCachedDataset, preencode
 from pathlib import Path
 from tqdm import tqdm
 from transformers import (
-    GPT2LMHeadModel, GPT2TokenizerFast,
+    GPT2Config, GPT2LMHeadModel, GPT2TokenizerFast,
     T5ForConditionalGeneration, T5TokenizerFast,
     AdamW, Adafactor,
 )
@@ -27,6 +27,7 @@ def finetune(
     block_size: int = 2 << 8,
     fp16: bool = True,
     steps_per_checkpoint: int = 10,
+    start: int = 0,
     max_steps: int = 1e+15,
 ):
     # instantiate device to be used for training
@@ -40,6 +41,7 @@ def finetune(
         'block_size': block_size,
         'use_fp16': fp16,
         'steps_per_checkpoint': steps_per_checkpoint,
+        'step_start': start,
         'max_steps': max_steps,
     }
 
@@ -148,7 +150,7 @@ def finetune_t5(
 
         # save weights every `steps_per_checkpoint`
         if (i + 1) % steps_per_checkpoint == 0:
-            model.save_pretrained(f'{ckpt_path}-i')
+            model.save_pretrained(f'{ckpt_path}-{i}')
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
@@ -162,6 +164,7 @@ def finetune_gpt2(
     batch_size: int = 16,
     block_size: int = 2 << 8,
     use_fp16: bool = True,
+    step_start: int = 0,
     steps_per_checkpoint: int = 10,
     max_steps: int = 1e+15,
     ckpt_path: str = 'gpt2-finetuned',
@@ -173,8 +176,16 @@ def finetune_gpt2(
         preencode('gpt2', dataset_dir=dataset_dir,
                   batch_size=batch_size, block_size=block_size)
 
-    # instantiate pretrained tokenizer and model
-    model = GPT2LMHeadModel.from_pretrained(variant)
+    # instantiate model from the checkpoint (if exists), else variant
+    if Path(ckpt_path).is_dir():
+        print(f'Will load from checkpoint "{ckpt_path}".')
+        model = GPT2LMHeadModel.from_pretrained(ckpt_path)
+        config = GPT2Config.from_pretrained(variant)
+        assert is_variant_same(model.config, config)
+    else:
+        model = GPT2LMHeadModel.from_pretrained(variant)
+
+    # instantiate tokenizer based on the passed variant
     tokenizer = GPT2TokenizerFast.from_pretrained(variant)
 
     # put model on cuda device and set it to training mode
@@ -193,7 +204,9 @@ def finetune_gpt2(
     tokenizer.pad_token = tokenizer.eos_token
 
     # retrieve python repositories dataset
-    dataset = PythonReposCachedDataset(cache_file, max_steps)
+    print(f'Will start finetuning from step={step_start}')
+    dataset = PythonReposCachedDataset(
+        cache_file, start=step_start, stop=max_steps)
 
     # initialize model's optimizer
     optimizer = AdamW(model.parameters(), lr=1e-5)
@@ -249,7 +262,7 @@ def finetune_gpt2(
 
         # save weights every `steps_per_checkpoint`
         if (i + 1) % steps_per_checkpoint == 0:
-            model.save_pretrained(f'{ckpt_path}-i')
+            model.save_pretrained(f'{ckpt_path}-{i}')
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
@@ -360,6 +373,19 @@ def to_truncated_list(tensor):
             pass
 
     return result
+
+
+def is_variant_same(config1, config2):
+    return (
+        config1.vocab_size == config2.vocab_size
+        and config1.n_ctx == config2.n_ctx
+        and config1.n_embd == config2.n_embd
+        and config1.n_head == config2.n_head
+        and config1.n_inner == config2.n_inner
+        and config1.n_layer == config2.n_layer
+        and config1.n_positions == config2.n_positions
+        and config1.model_type == config2.model_type
+    )
 
 
 if __name__ == '__main__':
