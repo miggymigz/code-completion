@@ -8,7 +8,9 @@ from transformers import (
 )
 
 import fire
+import glob
 import random
+import shutil
 import torch
 import warnings
 
@@ -204,20 +206,21 @@ def finetune_gpt2(
     tokenizer.pad_token = tokenizer.eos_token
 
     # retrieve python repositories dataset
-    print(f'Will start finetuning from step={step_start}')
-    dataset = PythonReposCachedDataset(
-        cache_file, start=step_start, stop=max_steps)
+    dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer
     optimizer = AdamW(model.parameters(), lr=1e-5)
 
+    # initialize tqdm progress bar (with optional offset)
+    pbar = tqdm(total=len(dataset))
+    pbar.update(step_start)
+
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    pbar = tqdm(dataset)
-    for i, batch in enumerate(pbar):
+    for i in range(step_start, min(len(dataset), max_steps)):
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
-        encoding = tokenizer(batch, return_tensors='pt', padding=True)
+        encoding = tokenizer(dataset[i], return_tensors='pt', padding=True)
         input_ids = encoding['input_ids'].split(block_size, dim=1)
         attn_mask = encoding['attention_mask'].split(block_size, dim=1)
 
@@ -246,7 +249,7 @@ def finetune_gpt2(
             if torch.isnan(loss):
                 model.save_pretrained(f'{ckpt_path}-stopped-by-nan')
                 pbar.write('Input batch that lead to nan loss:')
-                pbar.write(str(batch))
+                pbar.write(str(dataset[i]))
                 return
 
             # Write loss and continue training
@@ -260,8 +263,13 @@ def finetune_gpt2(
             loss.backward()
             optimizer.step()
 
+        # mark step as done
+        pbar.update(1)
+
         # save weights every `steps_per_checkpoint`
+        # delete old checkpoints to not overflow disk usage
         if (i + 1) % steps_per_checkpoint == 0:
+            [shutil.rmtree(path) for path in glob.glob(f'{ckpt_path}-*')]
             model.save_pretrained(f'{ckpt_path}-{i}')
 
     # save finetuned weights (final)
