@@ -6,6 +6,9 @@ from transformers import (
     T5Config, T5ForConditionalGeneration, T5TokenizerFast,
     AdamW,
 )
+from ccompletion.utils import (
+    generate_samples, to_truncated_list, is_variant_same
+)
 
 import fire
 import glob
@@ -22,11 +25,11 @@ import warnings
 def finetune(
     t5: bool = False,
     gpt2: bool = False,
-    t5variant: str = 't5-large',
-    gpt2variant: str = 'gpt2-large',
+    t5variant: str = 't5-base',
+    gpt2variant: str = 'gpt2-medium',
     dataset_dir: str = 'repositories',
-    batch_size: int = 16,
-    block_size: int = 2 << 8,
+    batch_size: int = 8,
+    block_size: int = 512,
     fp16: bool = True,
     steps_per_checkpoint: int = 10,
     start: int = 0,
@@ -128,10 +131,10 @@ def finetune_t5(
             )
 
             # move input tensor to GPU
-            _input_ids = _input_ids.to(device)
-            _input_ids_mask = _input_ids_mask.to(device)
-            _labels = _labels.to(device)
-            _labels_mask = _labels_mask.to(device)
+            _input_ids = torch.as_tensor(_input_ids, device=device)
+            _input_ids_mask = torch.as_tensor(_input_ids_mask, device=device)
+            _labels = torch.as_tensor(_labels, device=device)
+            _labels_mask = torch.as_tensor(_labels_mask, device=device)
 
             # compute loss
             loss = model(
@@ -290,125 +293,6 @@ def finetune_gpt2(
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
     print('Finished finetuning GPT-2')
-
-
-def generate_samples(input_ids, dprob=0.15, sentinel_first_id=32099, eos_token_id=1, pad=True, pad_token_id=0):
-    # count the number of tokens for each of the sequences to drop
-    n_word_dropouts = [
-        int(len(sequence_ids) * dprob)
-        for sequence_ids in input_ids
-    ]
-
-    # in case where there are very short sentences (so there are no tokens to drop),
-    # we simply remove them from the batch
-    to_remove = [i for i, count in enumerate(n_word_dropouts) if count == 0]
-    for idx in to_remove:
-        del n_word_dropouts[idx], input_ids[idx]
-
-    # generate the random indices to drop in the input sequences (excluding special tokens)
-    # group indices based on if they are sequential or not
-    d_indices = [
-        group(sorted(random.choices(range(len(s) - 1), k=n_word_dropouts[i])))
-        for i, s in enumerate(input_ids)
-    ]
-
-    # accumulate labels of the sequences in the batch
-    labels = []
-    for i, s_indices in enumerate(d_indices):
-        # the labels of the current sequence
-        s_labels = []
-        for j, (start, end) in enumerate(s_indices):
-            # add for each sentinel token, it must be followed by the tokens it represents
-            s_labels.extend([sentinel_first_id - j, *input_ids[i][start:end]])
-
-            # we delete the tokens from the input_ids (since we already put it in labels)
-            # and we replace those tokens with the sentinel token
-            del input_ids[i][start:end]
-            input_ids[i].insert(start, sentinel_first_id - j)
-
-        # add the labels of the current sequence to the batch labels
-        s_labels.append(eos_token_id)
-        labels.append(s_labels)
-
-    # raw input_ids and labels (without padding, and not a tensor)
-    outputs = input_ids, labels
-
-    # we return a pytorch tensor with padding
-    # (since tensor should have a consistent size)
-    if pad:
-        # determine the longest sequence length
-        max_len_inputs = max([len(s) for s in input_ids])
-        max_len_labels = max([len(s) for s in labels])
-
-        # create attention masks tensors for both input_ids and labels
-        attn_mask_inputs = torch.ones(len(input_ids), max_len_inputs)
-        attn_mask_labels = torch.ones(len(labels), max_len_labels)
-
-        # fill holes with pad tokens
-        for i, s in enumerate(input_ids):
-            if len(s) < max_len_inputs:
-                delta = max_len_inputs - len(s)
-                input_ids[i] += [pad_token_id] * delta
-                attn_mask_inputs[i, -delta:] = 0
-
-        # do the same with labels
-        for i, s in enumerate(labels):
-            if len(s) < max_len_labels:
-                delta = max_len_labels - len(s)
-                labels[i] += [pad_token_id] * delta
-                attn_mask_labels[i, -delta:] = 0
-
-        # convert both lists into a pytorch tensor
-        input_ids = torch.tensor(input_ids)
-        labels = torch.tensor(labels)
-        outputs = input_ids, attn_mask_inputs, labels, attn_mask_labels
-
-    return outputs
-
-
-def group(indices):
-    result = []
-    start = None
-    last = None
-
-    for idx in indices:
-        if start is None:
-            start = last = idx
-        elif idx != last + 1:
-            result.append((start, last + 1))
-            start = last = idx
-        else:
-            last = idx
-
-    if start is not None:
-        result.append((start, last + 1))
-
-    return result
-
-
-def to_truncated_list(tensor):
-    result = tensor.tolist()
-    for i in range(len(result)):
-        try:
-            end = result[i].index(0)
-            result[i] = result[i][:end]
-        except ValueError:
-            pass
-
-    return result
-
-
-def is_variant_same(config1, config2):
-    return (
-        config1.vocab_size == config2.vocab_size
-        and config1.n_ctx == config2.n_ctx
-        and config1.n_embd == config2.n_embd
-        and config1.n_head == config2.n_head
-        and config1.n_inner == config2.n_inner
-        and config1.n_layer == config2.n_layer
-        and config1.n_positions == config2.n_positions
-        and config1.model_type == config2.model_type
-    )
 
 
 if __name__ == '__main__':
