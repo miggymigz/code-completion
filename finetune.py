@@ -31,7 +31,7 @@ def finetune(
     batch_size: int = 8,
     block_size: int = 512,
     fp16: bool = True,
-    steps_per_checkpoint: int = 10,
+    steps_per_checkpoint: int = 100,
     start: int = 0,
     max_steps: int = 1e+15,
     learning_rate: float = 1e-5,
