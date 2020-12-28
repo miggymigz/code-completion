@@ -3,7 +3,7 @@ from pathlib import Path
 from tqdm import tqdm
 from transformers import (
     GPT2Config, GPT2LMHeadModel, GPT2TokenizerFast,
-    T5ForConditionalGeneration, T5TokenizerFast,
+    T5Config, T5ForConditionalGeneration, T5TokenizerFast,
     AdamW, Adafactor,
 )
 
@@ -64,7 +64,8 @@ def finetune_t5(
     batch_size: int = 16,
     block_size: int = 2 << 8,
     use_fp16: bool = True,
-    steps_per_checkpoint: int = 10,
+    step_start: int = 0,
+    steps_per_checkpoint: int = 100,
     max_steps: int = 1e+15,
     ckpt_path: str = 't5-finetuned',
 ):
@@ -75,8 +76,16 @@ def finetune_t5(
         preencode('t5', dataset_dir=dataset_dir,
                   batch_size=batch_size, block_size=block_size)
 
-    # instantiate pretrained tokenizer and model
-    model = T5ForConditionalGeneration.from_pretrained(variant)
+    # instantiate model from the checkpoint (if exists), else variant
+    if Path(ckpt_path).is_dir():
+        print(f'Will load from checkpoint "{ckpt_path}".')
+        model = T5ForConditionalGeneration.from_pretrained(ckpt_path)
+        config = T5Config.from_pretrained(variant)
+        assert is_variant_same(model.config, config)
+    else:
+        model = T5ForConditionalGeneration.from_pretrained(variant)
+
+    # instantiate tokenizer based on the passed variant
     tokenizer = T5TokenizerFast.from_pretrained(variant)
 
     # put model on cuda device and set it to training mode
@@ -90,7 +99,7 @@ def finetune_t5(
         model.half()
 
     # retrieve python repositories dataset
-    dataset = PythonReposCachedDataset(cache_file, max_steps=max_steps)
+    dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer
     optimizer = Adafactor(
@@ -99,14 +108,17 @@ def finetune_t5(
         relative_step=False
     )
 
+    # initialize tqdm progress bar (with optional offset)
+    pbar = tqdm(total=len(dataset))
+    pbar.update(step_start)
+
     # The goal of this finetuning is to let the model see each of the python source
     # files exactly once (and not by epochs)
-    pbar = tqdm(dataset)
-    for i, batch in enumerate(pbar):
+    for i in range(step_start, min(len(dataset), max_steps)):
         # encode batch into their token IDS
         # split tensors since the model has a max length limit
         input_ids = tokenizer(
-            batch,
+            dataset[i],
             return_tensors='pt',
             padding=True,
         ).input_ids.split(block_size, dim=1)
@@ -136,7 +148,7 @@ def finetune_t5(
             if torch.isnan(loss):
                 model.save_pretrained(f'{ckpt_path}-stopped-by-nan')
                 pbar.write('Input batch that lead to nan loss:')
-                pbar.write(str(batch))
+                pbar.write(str(dataset[i]))
                 return
 
             # Write loss and continue training
@@ -152,7 +164,11 @@ def finetune_t5(
 
         # save weights every `steps_per_checkpoint`
         if (i + 1) % steps_per_checkpoint == 0:
+            [shutil.rmtree(path) for path in glob.glob(f'{ckpt_path}-*')]
             model.save_pretrained(f'{ckpt_path}-{i}')
+
+        # mark step as done
+        pbar.update(1)
 
     # save finetuned weights (final)
     model.save_pretrained(ckpt_path)
