@@ -4,7 +4,7 @@ from tqdm import tqdm
 from transformers import (
     GPT2Config, GPT2LMHeadModel, GPT2TokenizerFast,
     T5Config, T5ForConditionalGeneration, T5TokenizerFast,
-    AdamW, Adafactor,
+    AdamW,
 )
 
 import fire
@@ -31,6 +31,7 @@ def finetune(
     steps_per_checkpoint: int = 10,
     start: int = 0,
     max_steps: int = 1e+15,
+    learning_rate: float = 1e-5,
 ):
     # instantiate device to be used for training
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -45,6 +46,7 @@ def finetune(
         'steps_per_checkpoint': steps_per_checkpoint,
         'step_start': start,
         'max_steps': max_steps,
+        'learning_rate': learning_rate,
     }
 
     if gpt2:
@@ -58,7 +60,7 @@ def finetune(
 
 def finetune_t5(
     variant: str = 't5-base',
-    learning_rate: float = 0.001,
+    learning_rate: float = 1e-4,
     device: torch.device = 'cpu',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
@@ -102,11 +104,7 @@ def finetune_t5(
     dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer
-    optimizer = Adafactor(
-        model.parameters(),
-        lr=learning_rate,
-        relative_step=False
-    )
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
 
     # initialize tqdm progress bar (with optional offset)
     pbar = tqdm(total=len(dataset))
@@ -177,6 +175,7 @@ def finetune_t5(
 
 def finetune_gpt2(
     variant: str = 'gpt2',
+    learning_rate: float = 1e-5,
     device: torch.device = 'cpu',
     dataset_dir: str = 'repositories',
     batch_size: int = 16,
@@ -225,7 +224,7 @@ def finetune_gpt2(
     dataset = PythonReposCachedDataset(cache_file)
 
     # initialize model's optimizer
-    optimizer = AdamW(model.parameters(), lr=1e-5)
+    optimizer = AdamW(model.parameters(), lr=learning_rate)
 
     # initialize tqdm progress bar (with optional offset)
     pbar = tqdm(total=len(dataset))
