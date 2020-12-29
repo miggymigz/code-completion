@@ -105,7 +105,10 @@ def generate_samples(
 
     # in case where there are very short sentences (so there are no tokens to drop),
     # we simply remove them from the batch
-    to_remove = [i for i, count in enumerate(n_word_dropouts) if count == 0]
+    to_remove = reversed([
+        i for i, count in enumerate(n_word_dropouts)
+        if count == 0
+    ])
     for idx in to_remove:
         del n_word_dropouts[idx], input_ids[idx]
 
