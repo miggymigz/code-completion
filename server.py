@@ -27,11 +27,11 @@ class SamplePayload(BaseModel):
 def startup_event():
     # initialize GPT-2 model
     gpt2model = GPT2LMHeadModel.from_pretrained('checkpoints/gpt2')
-    gpt2tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
+    gpt2tokenizer = GPT2TokenizerFast.from_pretrained('gpt2-medium')
     print('DEBUG: done initializing GPT-2')
 
     # initialize T5 model
-    t5model = T5ForConditionalGeneration.from_pretrained('t5-base')
+    t5model = T5ForConditionalGeneration.from_pretrained('checkpoints/t5')
     t5tokenizer = T5TokenizerFast.from_pretrained('t5-base')
     print('DEBUG: done initializing T5')
 
