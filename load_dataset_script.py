@@ -1,19 +1,26 @@
 from dataclasses import dataclass
 from pathlib import Path
+from transformers import T5TokenizerFast
 
+import ast
+import autopep8
 import datasets
+import lib2to3
+
 
 FEATURES = datasets.Features(
     {
         "src": datasets.Value("string"),
+        "target": datasets.Value("string"),
     }
 )
 
 
 @dataclass
 class PythonRepositoriesConfig(datasets.BuilderConfig):
+    model: str = None
+    clean: bool = False
     encoding: str = "utf-8"
-    chunksize: int = 10 << 20  # 10MB
 
 
 class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
@@ -27,14 +34,68 @@ class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
             raise ValueError(
                 "Specify the location of the repositories directory or zip file.")
 
-        repositories_path = self.config.data_dir
+        # prepare T5 tokenizer if model is T5
+        if self.config.model == 't5':
+            self.tokenizer = T5TokenizerFast.from_pretrained('t5-base')
+
         return [datasets.SplitGenerator(
             name=datasets.Split.TRAIN,
-            gen_kwargs={"path": repositories_path},
+            gen_kwargs={
+                "path": self.config.data_dir,
+                "model": self.config.model,
+                "clean": self.config.clean,
+            },
         )]
 
-    def _generate_examples(self, path):
+    def _generate_examples(self, path: str, model: str, clean: bool):
         for f in Path(path).rglob('*.py'):
-            if f.is_file():
-                with f.open('r', encoding=self.config.encoding) as fd:
-                    yield str(f), {'src': fd.read().strip()}
+            # skip directories whose names end in .py
+            if not f.is_file():
+                continue
+
+            # read file contents into memory
+            with f.open('r', encoding=self.config.encoding) as fd:
+                try:
+                    src = fd.read().strip()
+                    raise_error_if_empty(src)
+                    ast.parse(src)
+
+                    # optional source code formatting
+                    if clean:
+                        src = autopep8.fix_code(src)
+
+                    # yield samples
+                    if model == 't5':
+                        yield from self.__as_t5_example(str(f), src)
+                    else:
+                        yield str(f), {
+                            'src': src,
+                            'target': None,
+                        }
+                except (UnicodeDecodeError, ValueError, SyntaxError, lib2to3.pgen2.parse.ParseError):
+                    pass
+
+    def __as_t5_example(self, path: str, src: str):
+        lines = src.splitlines()
+
+        # atleast two lines is required to make a T5 sample
+        if len(lines) < 2:
+            return
+
+        for i in range(1, len(lines)):
+            inputs = self.tokenizer(lines[:i]).input_ids
+            inputs = [_id for ids in inputs for _id in ids]
+
+            # ignore remaining samples if model size can't accomodate
+            if len(inputs) > self.tokenizer.model_max_length:
+                break
+
+            yield f'{path}-{i}', {
+                'src': '\n'.join(lines[:i]),
+                'target': lines[i],
+            }
+
+
+def raise_error_if_empty(src: str):
+    if src == '':
+        raise ValueError('empty src')
