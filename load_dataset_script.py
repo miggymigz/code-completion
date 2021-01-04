@@ -1,11 +1,12 @@
 from dataclasses import dataclass
+from lib2to3.pgen2.parse import ParseError
 from pathlib import Path
 from transformers import T5TokenizerFast
 
 import ast
 import autopep8
 import datasets
-import lib2to3
+import itertools
 
 
 FEATURES = datasets.Features(
@@ -21,6 +22,7 @@ class PythonRepositoriesConfig(datasets.BuilderConfig):
     model: str = None
     clean: bool = False
     encoding: str = "utf-8"
+    maxfilesize: int = 1 << 20  # 1MB
 
 
 class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
@@ -44,11 +46,15 @@ class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
                 "path": self.config.data_dir,
                 "model": self.config.model,
                 "clean": self.config.clean,
+                "maxfilesize": self.config.maxfilesize,
             },
         )]
 
-    def _generate_examples(self, path: str, model: str, clean: bool):
-        for f in Path(path).rglob('*.py'):
+    def _generate_examples(self, path: str, model: str, clean: bool, maxfilesize: int):
+        files = Path(path).rglob('*.py')
+
+        # TODO: remove slice
+        for f in itertools.islice(files, 1000):
             # skip directories whose names end in .py
             if not f.is_file():
                 continue
@@ -59,6 +65,10 @@ class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
                     src = fd.read().strip()
                     raise_error_if_empty(src)
                     ast.parse(src)
+
+                    # skip files greater than `maxfilesize`
+                    if f.stat().st_size > maxfilesize:
+                        continue
 
                     # optional source code formatting
                     if clean:
@@ -72,7 +82,7 @@ class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
                             'src': src,
                             'target': None,
                         }
-                except (UnicodeDecodeError, ValueError, SyntaxError, lib2to3.pgen2.parse.ParseError):
+                except (UnicodeDecodeError, ValueError, SyntaxError, ParseError):
                     pass
 
     def __as_t5_example(self, path: str, src: str):
