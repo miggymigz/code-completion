@@ -155,7 +155,6 @@ def generate_samples(
 
         # create attention masks tensors for both input_ids and labels
         attn_mask_inputs = np.ones((len(out_input_ids), max_len_inputs))
-        attn_mask_labels = np.ones((len(out_labels), max_len_labels))
 
         # fill holes with pad tokens
         for i, s in enumerate(out_input_ids):
@@ -168,12 +167,11 @@ def generate_samples(
         for i, s in enumerate(out_labels):
             if len(s) < max_len_labels:
                 delta = max_len_labels - len(s)
-                out_labels[i] += [pad_token_id] * delta
-                attn_mask_labels[i, -delta:] = 0
+                out_labels[i] += [-100] * delta
 
         # convert both lists into a pytorch tensor
         out_input_ids = np.array(out_input_ids)
         labels = np.array(out_labels)
-        outputs = out_input_ids, attn_mask_inputs, labels, attn_mask_labels
+        outputs = out_input_ids, attn_mask_inputs, labels
 
     return outputs

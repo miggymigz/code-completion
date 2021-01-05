@@ -126,7 +126,7 @@ def finetune_t5(
 
         for j, _input_ids in enumerate(input_ids):
             # convert tensor into a python list to generate labels for t5 finetuning
-            _input_ids, _input_ids_mask, _labels, _labels_mask = generate_samples(
+            _input_ids, _input_ids_mask, _labels = generate_samples(
                 to_truncated_list(_input_ids)
             )
 
@@ -134,14 +134,12 @@ def finetune_t5(
             _input_ids = torch.as_tensor(_input_ids, device=device)
             _input_ids_mask = torch.as_tensor(_input_ids_mask, device=device)
             _labels = torch.as_tensor(_labels, device=device)
-            _labels_mask = torch.as_tensor(_labels_mask, device=device)
 
             # compute loss
             loss = model(
                 input_ids=_input_ids,
                 attention_mask=_input_ids_mask,
                 labels=_labels,
-                decoder_attention_mask=_labels_mask,
             ).loss
 
             # if loss turns out to be nan, then there's something wrong
@@ -153,10 +151,10 @@ def finetune_t5(
                 return
 
             # Write loss and continue training
-            pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
+            pbar.set_description(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
-            del _input_ids, _input_ids_mask, _labels, _labels_mask
+            del _input_ids, _input_ids_mask, _labels
 
             # update parameters
             optimizer.zero_grad()
@@ -245,6 +243,8 @@ def finetune_gpt2(
         for j in range(len(input_ids)):
             _input_ids = input_ids[j]
             _attn_mask = attn_mask[j]
+            _labels = _input_ids.detach().clone()
+            _labels[_labels == tokenizer.pad_token_id] = -100
 
             # skip batches with a width of less than 2
             # since we shift the positions of the tokens for their labels
@@ -254,12 +254,13 @@ def finetune_gpt2(
             # move input tensors to GPU
             _input_ids = _input_ids.to(device)
             _attn_mask = _attn_mask.to(device)
+            _labels = _labels.to(device)
 
             # compute loss
             loss = model(
                 _input_ids,
                 attention_mask=_attn_mask,
-                labels=_input_ids
+                labels=_labels
             ).loss
 
             # if loss turns out to be nan, then there's something wrong
@@ -271,10 +272,10 @@ def finetune_gpt2(
                 return
 
             # Write loss and continue training
-            pbar.write(f'Step {i+1}-{j+1}: Loss={loss}')
+            pbar.set_description(f'Step {i+1}-{j+1}: Loss={loss}')
 
             # delete input tensors to free memory in the GPU
-            del _input_ids, _attn_mask
+            del _input_ids, _attn_mask, _labels
 
             # update parameters
             optimizer.zero_grad()
