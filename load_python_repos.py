@@ -54,7 +54,7 @@ class PythonRepositoriesDataset(datasets.GeneratorBasedBuilder):
         files = Path(path).rglob('*.py')
 
         # TODO: remove slice
-        for f in itertools.islice(files, 1000):
+        for f in itertools.islice(files, 100):
             # skip directories whose names end in .py
             if not f.is_file():
                 continue
