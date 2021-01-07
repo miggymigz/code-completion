@@ -60,9 +60,13 @@ def finetune_t5(
     # files exactly once (and not by epochs)
     for i, batch in enumerate(pbar):
         inputs = tokenizer(batch['src'], padding=True, return_tensors='pt')
-        labels = tokenizer(batch['target'], padding=True, return_tensors='pt')
-        inputs['labels'] = labels.input_ids + \
-            ((labels.attention_mask - 1) * 100)  # -100 are masked
+        labels = tokenizer(
+            batch['target'],
+            padding=True,
+            return_tensors='pt',
+        ).input_ids
+        labels[labels == tokenizer.pad_token_id] = -100
+        inputs['labels'] = labels
 
         # move input tensor to appropriate device
         inputs = {k: v.to(device) for k, v in inputs.items()}

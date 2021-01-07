@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from ccompletion.samplers import sampleGPT2, sampleT5
+from ccompletion.samplers import sampleGPT2, sampleT5v2
 from transformers import (
     GPT2LMHeadModel, GPT2TokenizerFast,
     T5ForConditionalGeneration, T5TokenizerFast,
@@ -31,7 +31,7 @@ def startup_event():
     print('DEBUG: done initializing GPT-2')
 
     # initialize T5 model
-    t5model = T5ForConditionalGeneration.from_pretrained('checkpoints/t5')
+    t5model = T5ForConditionalGeneration.from_pretrained('checkpoints/t5v2')
     t5tokenizer = T5TokenizerFast.from_pretrained('t5-base')
     print('DEBUG: done initializing T5')
 
@@ -45,6 +45,7 @@ def doSampleGPT2(payload: SamplePayload):
     src = payload.src
     model, tokenizer = objects['gpt2']
     results = sampleGPT2(model=model, tokenizer=tokenizer, sequence=src)
+
     return [{'probability': p, 'value': v} for p, v in results]
 
 
@@ -52,13 +53,6 @@ def doSampleGPT2(payload: SamplePayload):
 def doSampleT5(payload: SamplePayload):
     src = payload.src
     model, tokenizer = objects['t5']
+    results = sampleT5v2(model=model, tokenizer=tokenizer, sequence=src)
 
-    try:
-        results = sampleT5(model=model, tokenizer=tokenizer, sequence=src)
-    except ValueError as e:
-        return HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e)
-        )
-
-    return [{'probability': 0, 'value': value} for value in results]
+    return [{'probability': p, 'value': v} for p, v in results]

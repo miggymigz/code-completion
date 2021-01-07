@@ -1,7 +1,9 @@
 from transformers import T5TokenizerFast, T5ForConditionalGeneration
 
+import numpy as np
 
-def sampleT5(
+
+def sampleT5v1(
     *,
     model: T5ForConditionalGeneration,
     tokenizer: T5TokenizerFast,
@@ -35,3 +37,34 @@ def sampleT5(
         return src_prefix + space + _txt + src_suffix
 
     return list(map(filter, outputs))
+
+
+def sampleT5v2(
+    *,
+    model: T5ForConditionalGeneration,
+    tokenizer: T5TokenizerFast,
+    sequence: str,
+    beam_width: int = 5,
+):
+    # sample `beam_width` sequences
+    input_ids = tokenizer(sequence, return_tensors='pt').input_ids
+    outputs = model.generate(
+        input_ids,
+        num_beams=beam_width,
+        num_return_sequences=beam_width,
+        early_stopping=True,
+        output_scores=True,
+        return_dict_in_generate=True,
+    )
+
+    # convert sequences' log probabilities
+    probs = np.exp(outputs.sequences_scores).tolist()
+
+    # decode generated sequences
+    sequences = tokenizer.batch_decode(outputs.sequences)
+
+    return sorted(
+        zip(probs, sequences),
+        key=lambda pair: pair[0],
+        reverse=True,
+    )
