@@ -50,6 +50,7 @@ def sampleT5v2(
     input_ids = tokenizer(sequence, return_tensors='pt').input_ids
     outputs = model.generate(
         input_ids,
+        do_sample=False,
         num_beams=beam_width,
         num_return_sequences=beam_width,
         early_stopping=True,
@@ -60,23 +61,13 @@ def sampleT5v2(
     # convert sequences' log probabilities
     probs = np.exp(outputs.sequences_scores).tolist()
 
-    # each generated sequence starts with a pad token and ends with
-    # an eos token which needs to be removed before decoding
-    sequences = outputs.sequences[:, 1:-1]
-
     # decode generated sequences
-    sequences = tokenizer.batch_decode(sequences)
+    sequences = tokenizer.batch_decode(
+        outputs.sequences, skip_special_tokens=True)
 
-    # each generated sequence may vary in lengths
-    # thus the above removal of pad and eos token is not enough
+    # single newline token prediction yields to an empty result
     for i, sequence in enumerate(sequences):
-        # discard eos token (plus more pad tokens if exists)
-        rindex = sequence.rfind(tokenizer.eos_token)
-        if rindex != -1:
-            sequences[i] = sequence[:rindex]
-
-        # single newline token prediction yields to an empty result
-        if not sequences[i]:
+        if not sequence:
             sequences[i] = '[newline]'
 
     return sorted(
