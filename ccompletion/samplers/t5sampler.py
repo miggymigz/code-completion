@@ -60,8 +60,24 @@ def sampleT5v2(
     # convert sequences' log probabilities
     probs = np.exp(outputs.sequences_scores).tolist()
 
+    # each generated sequence starts with a pad token and ends with
+    # an eos token which needs to be removed before decoding
+    sequences = outputs.sequences[:, 1:-1]
+
     # decode generated sequences
-    sequences = tokenizer.batch_decode(outputs.sequences)
+    sequences = tokenizer.batch_decode(sequences)
+
+    # each generated sequence may vary in lengths
+    # thus the above removal of pad and eos token is not enough
+    for i, sequence in enumerate(sequences):
+        # discard eos token (plus more pad tokens if exists)
+        rindex = sequence.rfind(tokenizer.eos_token)
+        if rindex != -1:
+            sequences[i] = sequence[:rindex]
+
+        # single newline token prediction yields to an empty result
+        if not sequences[i]:
+            sequences[i] = '[newline]'
 
     return sorted(
         zip(probs, sequences),
