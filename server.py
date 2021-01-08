@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from ccompletion.samplers import sampleGPT2, sampleT5v2
+from ccompletion.samplers import sampleGPT2v2, sampleT5v2
 from transformers import (
     GPT2LMHeadModel, GPT2TokenizerFast,
     T5ForConditionalGeneration, T5TokenizerFast,
@@ -26,8 +26,11 @@ class SamplePayload(BaseModel):
 @app.on_event('startup')
 def startup_event():
     # initialize GPT-2 model
-    gpt2model = GPT2LMHeadModel.from_pretrained('checkpoints/gpt2')
     gpt2tokenizer = GPT2TokenizerFast.from_pretrained('gpt2-medium')
+    gpt2model = GPT2LMHeadModel.from_pretrained(
+        'checkpoints/gpt2',
+        pad_token_id=gpt2tokenizer.eos_token_id
+    )
     print('DEBUG: done initializing GPT-2')
 
     # initialize T5 model
@@ -44,7 +47,7 @@ def startup_event():
 def doSampleGPT2(payload: SamplePayload):
     src = payload.src
     model, tokenizer = objects['gpt2']
-    results = sampleGPT2(model=model, tokenizer=tokenizer, sequence=src)
+    results = sampleGPT2v2(model=model, tokenizer=tokenizer, sequence=src)
 
     return [{'probability': p, 'value': v} for p, v in results]
 

@@ -2,6 +2,7 @@ from transformers import GPT2TokenizerFast, GPT2LMHeadModel
 from typing import List
 
 import torch
+import numpy as np
 
 ENDING_TOKENS = ('\n', '<|endoftext|>')
 
@@ -136,3 +137,75 @@ def sampleGPT2(
     # the probability of the sequences are not in order
     # so we sort them before returning it to the caller
     return sorted(zip(fp, fs), key=lambda pair: pair[0], reverse=True)
+
+
+def sampleGPT2v2(
+    *,
+    model: GPT2LMHeadModel,
+    tokenizer: GPT2TokenizerFast,
+    sequence: str,
+    beam_width: int = 5,
+    eos_token_id: int = 198,
+):
+    # make sure eos_token_id is correctly set
+    assert tokenizer.decode(eos_token_id) == '\n'
+
+    # sample `beam_width` sequences
+    input_ids = tokenizer(sequence, return_tensors='pt').input_ids
+    aux_beam_width = beam_width + int(beam_width * 0.75)
+    outputs = model.generate(
+        input_ids,
+        do_sample=False,
+        num_beams=aux_beam_width,
+        num_return_sequences=aux_beam_width,
+        early_stopping=True,
+        eos_token_id=eos_token_id,
+        output_scores=True,
+        return_dict_in_generate=True,
+        max_length=input_ids.size(-1) + 20,
+    )
+
+    # convert sequences' log probabilities
+    probs = np.exp(outputs.sequences_scores).tolist()
+
+    # decode generated sequences
+    sequences = tokenizer.batch_decode(
+        outputs.sequences, skip_special_tokens=True)
+
+    # only preserve the last lines
+    for i in range(len(sequences)):
+        sequences[i] = sequences[i].strip()
+
+        try:
+            ridx = sequences[i].rindex('\n')
+        except ValueError:
+            pass
+        else:
+            print('BEFORE: ', sequences[i])
+            sequences[i] = sequences[i][ridx+1:]
+            print('AFTER: ', sequences[i])
+
+    # remove duplicate suggestions/recommendations
+    for i in reversed(range(len(sequences))):
+        # retrieve current sequence
+        sequence = sequences[i]
+
+        # remove duplicate suggestions
+        try:
+            idx = sequences.index(sequence)
+        except ValueError:
+            pass
+        else:
+            if i != idx:
+                del probs[i], sequences[i]
+            continue
+
+        # single newline token prediction yields to an empty result
+        if not sequence:
+            sequences[i] = '[newline]'
+
+    return sorted(
+        zip(probs, sequences),
+        key=lambda pair: pair[0],
+        reverse=True,
+    )
